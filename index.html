@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SURGICAL ACTION AI — Robotic Digital Twin (Three.js + Rapier3D)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app-shell">
+      <!-- Top Real-Time Engineering Telemetry Bar -->
+      <header class="top-telemetry-bar">
+        <div class="brand-cluster">
+          <div class="brand-dot"></div>
+          <div>
+            <div class="brand-title">SURGICAL ACTION AI</div>
+            <div class="brand-subtitle">6-DOF DOFBOT DIGITAL TWIN · RAPIER3D PHYSICS · ISAAC SIM READY</div>
+          </div>
+        </div>
+
+        <div class="telemetry-strip">
+          <div class="telemetry-item">
+            <span class="telemetry-label">SIM TIME</span>
+            <strong id="telemetry-sim-time">0.00 s</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">TIMESTEP</span>
+            <strong id="telemetry-timestep">16.67 ms (60 Hz)</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">FRAME RATE</span>
+            <strong id="telemetry-fps">60.0 FPS</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">TCP POSE (WORLD)</span>
+            <strong id="telemetry-tcp-pose">[0.000, 0.000, 0.000] m</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">ACTIVE INSTRUMENT</span>
+            <strong id="telemetry-obj-pose">Rectangular Surgical Block (0.15 kg)</strong>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">COLLISION STATUS</span>
+            <span id="telemetry-collision" class="telemetry-pill pill-valid">CLEAR</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-label">TASK STATE</span>
+            <span id="telemetry-task-state" class="telemetry-pill pill-info">IDLE</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main 3-Column Engineering Workspace -->
+      <div class="workspace-grid">
+        <!-- Left Dock: 6-DOF Joint Motor Drives, IK Target & Mechanical Gripper -->
+        <aside class="side-dock left-dock" id="left-dock-content"></aside>
+
+        <!-- Central 3D Physics Viewport + Wrist Camera Picture-in-Picture -->
+        <main class="center-viewport-wrapper">
+          <div id="viewport-container" class="viewport-canvas-host"></div>
+
+          <!-- Top-Left Stage Hierarchy Overlay (Isaac Sim style) - Collapsible to declutter 3D view -->
+          <details class="viewport-stage-overlay">
+            <summary class="stage-overlay-title">STAGE HIERARCHY (6-DOF)</summary>
+            <div class="stage-tree-list">
+              <div>/World/RobotBase (FixedBody)</div>
+              <div>&nbsp;&nbsp;└─ /J1_Base_RevoluteJoint (+Y)</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;└─ /J2_Shoulder_Lift_RevoluteJoint</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J3_Elbow_RevoluteJoint</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J4_Wrist_Pitch_RevoluteJoint</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J5_Wrist_Roll_RevoluteJoint</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J6_Tool_Flange + Gripper</div>
+            </div>
+          </details>
+
+          <!-- Bottom-Left Wrist Camera Picture-in-Picture Sensor Feed - Minimizable -->
+          <div class="wrist-pip-card" id="wrist-pip-card-widget">
+            <div class="wrist-pip-header">
+              <span>WRIST CAMERA (RGB)</span>
+              <button type="button" class="btn-pip-toggle" id="btn-toggle-pip" title="Minimize/Maximize">_</button>
+            </div>
+            <div id="wrist-pip-card-host"></div>
+          </div>
+        </main>
+
+        <!-- Right Dock: Physics Parameters, Object Spawner, Pick & Place & AI Recorder -->
+        <aside class="side-dock right-dock">
+          <div id="right-dock-top"></div>
+          <div id="right-dock-bottom"></div>
+        </aside>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
