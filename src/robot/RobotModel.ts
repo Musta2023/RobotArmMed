@@ -371,7 +371,30 @@ export class RobotModel {
   ): void {
     this._buildGreenUBracketLink(group, 0.08, 0.058, greenMat, servoMat, hornMat);
 
-    // Camera Mounting Bracket on the front/top face (+Z) of the wrist link
+    // 1. Rigid Black Metal L-Bracket connecting green wrist channel to camera
+    // Horizontal foot plate anchored flush to front face of green bracket (z = 0.024)
+    const footPlateGeo = new THREE.BoxGeometry(0.048, 0.005, 0.028);
+    const footPlate = new THREE.Mesh(footPlateGeo, servoMat);
+    footPlate.position.set(0, 0.015, 0.036);
+    footPlate.castShadow = true;
+    group.add(footPlate);
+
+    // Silver mounting screws bolting the L-bracket foot plate to the green channel
+    const screwGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.007, 12);
+    for (const sx of [-0.016, 0.016]) {
+      const screw = new THREE.Mesh(screwGeo, hornMat);
+      screw.position.set(sx, 0.018, 0.026);
+      group.add(screw);
+    }
+
+    // Vertical upright mounting plate of the L-bracket
+    const uprightPlateGeo = new THREE.BoxGeometry(0.048, 0.048, 0.005);
+    const uprightPlate = new THREE.Mesh(uprightPlateGeo, servoMat);
+    uprightPlate.position.set(0, 0.0365, 0.0485);
+    uprightPlate.castShadow = true;
+    group.add(uprightPlate);
+
+    // 2. Camera Mounting Assembly on the front/top face (+Z) of the wrist link
     const camMountGroup = new THREE.Group();
     camMountGroup.name = 'WristCameraAssembly';
     const [mx, my, mz] = this.config.wristCamera.mountOffset;
@@ -379,36 +402,39 @@ export class RobotModel {
 
     // Black camera PCB housing plate
     const camPlate = new THREE.Mesh(
-      new THREE.BoxGeometry(0.048, 0.052, 0.008),
+      new THREE.BoxGeometry(0.046, 0.048, 0.004),
       servoMat
     );
     camPlate.castShadow = true;
     camMountGroup.add(camPlate);
 
-    // 4 Yellow/Brass corner standoffs on camera bracket (just like reference image)
-    const standoffGeo = new THREE.CylinderGeometry(0.0025, 0.0025, 0.014, 8).rotateX(Math.PI / 2);
-    for (const cx of [-0.018, 0.018]) {
-      for (const cy of [-0.018, 0.018]) {
+    // 4 Yellow/Brass corner standoffs securely connecting upright L-bracket to camera PCB plate
+    // Spans from upright plate (local z = -0.0095) to PCB (local z = -0.002)
+    const standoffLength = 0.008;
+    const standoffGeo = new THREE.CylinderGeometry(0.0025, 0.0025, standoffLength, 12).rotateX(Math.PI / 2);
+    for (const cx of [-0.016, 0.016]) {
+      for (const cy of [-0.016, 0.016]) {
         const post = new THREE.Mesh(standoffGeo, brassMat);
-        post.position.set(cx, cy, -0.006);
+        post.position.set(cx, cy, -0.0055);
+        post.castShadow = true;
         camMountGroup.add(post);
       }
     }
 
     // Silver cylindrical wide-angle camera barrel + dark glass lens
     const barrelMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.014, 0.015, 0.024, 24),
+      new THREE.CylinderGeometry(0.014, 0.015, 0.022, 24),
       hornMat
     );
-    barrelMesh.position.set(0, 0.012, 0.010);
+    barrelMesh.position.set(0, 0.008, 0.012);
     barrelMesh.castShadow = true;
     camMountGroup.add(barrelMesh);
 
     const glassMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.010, 0.010, 0.026, 20),
+      new THREE.CylinderGeometry(0.010, 0.010, 0.024, 20),
       servoMat
     );
-    glassMesh.position.set(0, 0.012, 0.010);
+    glassMesh.position.set(0, 0.008, 0.012);
     camMountGroup.add(glassMesh);
 
     // Attach the Three.js PerspectiveCamera looking forward along the tool (+Y) toward the gripper
