@@ -19,6 +19,7 @@ import { RobotModel } from './robot/RobotModel.js';
 import { JointController } from './control/JointController.js';
 import { MotionController } from './control/MotionController.js';
 import { InstrumentFactory } from './objects/InstrumentFactory.js';
+import { WorkZoneManager } from './objects/WorkZoneManager.js';
 import { ContactDetector } from './manipulation/ContactDetector.js';
 import { GraspManager } from './manipulation/GraspManager.js';
 import { PlacementVerifier } from './manipulation/PlacementVerifier.js';
@@ -45,6 +46,7 @@ export interface DigitalTwinAppOptions {
   rightDockTopContainer?: HTMLElement | null;
   rightDockBottomContainer?: HTMLElement | null;
   headless?: boolean;
+  sixObjects?: boolean;
 }
 
 export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) {
@@ -74,12 +76,20 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     initialMode: 'KINEMATIC'
   });
 
-  // 3. Initialize Surgical Environment & Instrument Factory
+  // 3. Initialize Surgical Environment, WorkZoneManager & Instrument Factory
   const environment = new Environment(bodyManager);
+  const workZoneManager = new WorkZoneManager();
   const instrumentFactory = new InstrumentFactory(bodyManager);
-  instrumentFactory.spawnInstrument('rectangular_instrument', {
-    id: 'surgical_instrument_01'
-  });
+
+  // In browser mode (or when explicitly requested), initialize all 6 distinct objects in Zone A
+  const spawnSix = options.sixObjects ?? (!options.headless);
+  if (spawnSix) {
+    instrumentFactory.setupSixZoneObjects();
+  } else {
+    instrumentFactory.spawnInstrument('rectangular_instrument', {
+      id: 'surgical_instrument_01'
+    });
+  }
 
   // 4. Initialize 3D SceneManager
   const sceneManager = new SceneManager(
@@ -116,11 +126,20 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     placementVerifier,
     instrumentFactory,
     failureDetector,
-    recoveryManager
+    recoveryManager,
+    workZoneManager
   });
 
   // 7. Initialize 3D Mouse Interaction & Manipulation Controllers (Modes A, B, C)
   const objectManipulator = new ObjectManipulator(instrumentFactory, graspManager);
+  if (typeof window !== 'undefined' && sceneManager.renderer?.domElement) {
+    objectManipulator.initTransformControls(
+      sceneManager.scene,
+      sceneManager.cameraManager.mainCamera,
+      sceneManager.renderer.domElement,
+      sceneManager.cameraManager.orbitControls
+    );
+  }
   const gripperTargetController = new GripperTargetController(
     robotModel,
     motionController,
@@ -231,9 +250,8 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
             }
           : undefined
       });
-      if (pickAndPlace.state === 'COMPLETE') {
-        episodeRecorder.stopRecording('success');
-      }
+      // Continuous multi-scenario recording: do not auto-stop on COMPLETE.
+      // Persists across all pick-and-place cycles until user explicitly stops recording.
     }
   };
 
@@ -263,7 +281,12 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
   const resetObjectsOnly = (): void => {
     objectManipulator.releaseObject();
     graspManager.releaseGrasp();
-    instrumentFactory.resetAllInstruments();
+    workZoneManager.resetSlotOccupancy();
+    if (instrumentFactory.instruments.has('Object_01')) {
+      instrumentFactory.resetAllInstrumentsToZoneA();
+    } else {
+      instrumentFactory.resetAllInstruments();
+    }
     bodyManager.syncVisualMeshes();
   };
 
@@ -271,10 +294,15 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     objectManipulator.releaseObject();
     graspManager.releaseGrasp();
     pickAndPlace.reset();
+    workZoneManager.resetSlotOccupancy();
     failureDetector.clearActiveFailure();
     motionController.moveToHomePose(true);
     gripperTargetController.syncToCurrentTCP();
-    instrumentFactory.resetAllInstruments();
+    if (instrumentFactory.instruments.has('Object_01')) {
+      instrumentFactory.resetAllInstrumentsToZoneA();
+    } else {
+      instrumentFactory.resetAllInstruments();
+    }
     physicsWorld.resetClock();
     bodyManager.syncVisualMeshes();
     robotModel.captureStateSnapshot(0, false, false, null, 0);
@@ -369,6 +397,8 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     placementVerifier,
     failureDetector,
     recoveryManager,
+    workZoneManager,
+    setupSixObjectsInZoneA: () => instrumentFactory.setupSixZoneObjects(),
     pickAndPlace,
     objectManipulator,
     gripperTargetController,

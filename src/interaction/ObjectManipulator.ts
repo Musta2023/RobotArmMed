@@ -12,6 +12,7 @@
  */
 
 import * as THREE from 'three';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import {
   InstrumentFactory,
   ActiveSurgicalInstrument
@@ -30,6 +31,16 @@ export class ObjectManipulator {
   public grabbedObjectId: string | null = null;
   public isDragging: boolean = false;
   public dragPlaneMode: DragPlaneMode = 'horizontal';
+
+  // 3D TransformControls Gizmo for direct object manipulation & rotation
+  public transformControls: TransformControls | null = null;
+  public transformControlsHelper: THREE.Object3D | null = null;
+  public isGizmoActive: boolean = false;
+  public isDraggingGizmo: boolean = false;
+  public gizmoMode: 'translate' | 'rotate' = 'translate';
+  public scene: THREE.Scene | null = null;
+  public camera: THREE.Camera | null = null;
+  public orbitControlsRef: { enabled: boolean } | null = null;
 
   public targetPosition: THREE.Vector3 = new THREE.Vector3();
   public targetQuaternion: THREE.Quaternion = new THREE.Quaternion();
@@ -171,6 +182,9 @@ export class ObjectManipulator {
     this.isDragging = true;
     this.instrumentFactory.activeInstrumentId = id;
     this.setHoveredObject(id);
+    if (this.transformControls && this.isGizmoActive) {
+      this.attachGizmoToObject(id);
+    }
 
     const t = inst.managedBody.body.translation();
     const r = inst.managedBody.body.rotation();
@@ -320,6 +334,204 @@ export class ObjectManipulator {
 
     if (this.grabbedObjectId === id && this.isDragging) {
       this.targetQuaternion.premultiply(deltaQ).normalize();
+      inst.managedBody.body.setRotation(
+        {
+          x: this.targetQuaternion.x,
+          y: this.targetQuaternion.y,
+          z: this.targetQuaternion.z,
+          w: this.targetQuaternion.w
+        },
+        true
+      );
+      inst.managedBody.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      inst.managedBody.body.wakeUp();
+      if (inst.mesh) {
+        inst.mesh.quaternion.copy(this.targetQuaternion);
+      }
+      return [
+        this.targetQuaternion.x,
+        this.targetQuaternion.y,
+        this.targetQuaternion.z,
+        this.targetQuaternion.w
+      ];
+    } else {
+      const r = inst.managedBody.body.rotation();
+      const curQ = new THREE.Quaternion(r.x, r.y, r.z, r.w).premultiply(deltaQ).normalize();
+      inst.managedBody.body.setRotation(
+        { x: curQ.x, y: curQ.y, z: curQ.z, w: curQ.w },
+        true
+      );
+      inst.managedBody.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      inst.managedBody.body.wakeUp();
+      if (inst.mesh) {
+        inst.mesh.quaternion.copy(curQ);
+      }
+      return [curQ.x, curQ.y, curQ.z, curQ.w];
+    }
+  }
+
+  public initTransformControls(
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    domElement: HTMLElement,
+    orbitControls?: { enabled: boolean } | null
+  ): void {
+    this.scene = scene;
+    this.camera = camera;
+    this.orbitControlsRef = orbitControls ?? null;
+
+    this.transformControls = new TransformControls(camera, domElement);
+    this.transformControls.setSize(0.70);
+    this.transformControls.setMode(this.gizmoMode);
+    this.transformControls.enabled = false;
+
+    const tcAny = this.transformControls as unknown as {
+      getHelper?: () => THREE.Object3D;
+    };
+    this.transformControlsHelper =
+      typeof tcAny.getHelper === 'function'
+        ? tcAny.getHelper()
+        : (this.transformControls as unknown as THREE.Object3D);
+    this.transformControlsHelper.visible = false;
+
+    this.transformControls.addEventListener('dragging-changed', (event: { value: unknown }) => {
+      const dragging = Boolean(event.value);
+      this.isDraggingGizmo = dragging;
+      if (this.orbitControlsRef) {
+        this.orbitControlsRef.enabled = !dragging;
+      }
+    });
+
+    this.transformControls.addEventListener('change', () => {
+      if (this.isDraggingGizmo && this.isGizmoActive) {
+        this._syncGizmoTransformToBody();
+      }
+    });
+
+    this.scene.add(this.transformControlsHelper);
+  }
+
+  private _syncGizmoTransformToBody(): void {
+    const id = this.selectedObjectId ?? this.grabbedObjectId ?? this.instrumentFactory.activeInstrumentId;
+    if (!id) return;
+    const inst = this.instrumentFactory.instruments.get(id);
+    if (!inst) return;
+
+    const mesh = inst.mesh;
+    const body = inst.managedBody.body;
+
+    const halfHeight = (inst.config.dimensions.height ?? 0.036) / 2;
+    const clampedY = Math.max(mesh.position.y, halfHeight + 0.001);
+    mesh.position.y = clampedY;
+
+    body.setTranslation({ x: mesh.position.x, y: clampedY, z: mesh.position.z }, true);
+    body.setRotation({ x: mesh.quaternion.x, y: mesh.quaternion.y, z: mesh.quaternion.z, w: mesh.quaternion.w }, true);
+    body.resetForces(true);
+    body.resetTorques(true);
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    body.wakeUp();
+
+    this.targetPosition.copy(mesh.position);
+    this.targetQuaternion.copy(mesh.quaternion);
+  }
+
+  public attachGizmoToObject(id: string | null): void {
+    if (!this.transformControls) return;
+    if (!id) {
+      this.transformControls.detach();
+      if (this.transformControlsHelper) this.transformControlsHelper.visible = false;
+      return;
+    }
+    const inst = this.instrumentFactory.instruments.get(id);
+    if (inst) {
+      this.transformControls.attach(inst.mesh);
+      this.transformControls.enabled = this.isGizmoActive;
+      if (this.transformControlsHelper) {
+        this.transformControlsHelper.visible = this.isGizmoActive;
+      }
+    }
+  }
+
+  public setGizmoEnabled(enabled: boolean): void {
+    this.isGizmoActive = enabled;
+    if (this.transformControls) {
+      this.transformControls.enabled = enabled;
+      if (this.transformControlsHelper) {
+        this.transformControlsHelper.visible = enabled;
+      }
+      if (enabled) {
+        const id = this.selectedObjectId ?? this.instrumentFactory.activeInstrumentId;
+        this.attachGizmoToObject(id);
+      } else {
+        this.transformControls.detach();
+      }
+    }
+  }
+
+  public setGizmoMode(mode: 'translate' | 'rotate'): void {
+    this.gizmoMode = mode;
+    if (this.transformControls) {
+      this.transformControls.setMode(mode);
+    }
+  }
+
+  public rotateSelectedYaw(deltaDeg: number, objectId?: string): [number, number, number, number] | null {
+    return this.rotateObjectEulerDeg([0, deltaDeg, 0], objectId);
+  }
+
+  public rotateSelectedPitch(deltaDeg: number, objectId?: string): [number, number, number, number] | null {
+    return this.rotateObjectEulerDeg([deltaDeg, 0, 0], objectId);
+  }
+
+  public rotateSelectedRoll(deltaDeg: number, objectId?: string): [number, number, number, number] | null {
+    return this.rotateObjectEulerDeg([0, 0, deltaDeg], objectId);
+  }
+
+  public rotateWithMouseDelta(
+    deltaX: number,
+    deltaY: number,
+    objectId?: string,
+    camera?: THREE.Camera
+  ): [number, number, number, number] | null {
+    const id = objectId ?? this.grabbedObjectId ?? this.selectedObjectId ?? this.instrumentFactory.activeInstrumentId;
+    if (!id) return null;
+    const inst = this.instrumentFactory.instruments.get(id);
+    if (!inst) return null;
+
+    const sensitivity = 0.010;
+    const yawDeltaRad = -deltaX * sensitivity;
+    const pitchDeltaRad = -deltaY * sensitivity;
+
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      yawDeltaRad
+    );
+
+    const pitchAxis = new THREE.Vector3(1, 0, 0);
+    if (camera) {
+      camera.getWorldDirection(pitchAxis);
+      pitchAxis.cross(new THREE.Vector3(0, 1, 0)).normalize();
+    }
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(pitchAxis, pitchDeltaRad);
+    const deltaQ = new THREE.Quaternion().multiplyQuaternions(qYaw, qPitch);
+
+    if (this.grabbedObjectId === id && this.isDragging) {
+      this.targetQuaternion.premultiply(deltaQ).normalize();
+      inst.managedBody.body.setRotation(
+        {
+          x: this.targetQuaternion.x,
+          y: this.targetQuaternion.y,
+          z: this.targetQuaternion.z,
+          w: this.targetQuaternion.w
+        },
+        true
+      );
+      inst.managedBody.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      inst.managedBody.body.wakeUp();
+      if (inst.mesh) {
+        inst.mesh.quaternion.copy(this.targetQuaternion);
+      }
       return [
         this.targetQuaternion.x,
         this.targetQuaternion.y,
@@ -334,16 +546,29 @@ export class ObjectManipulator {
         true
       );
       inst.managedBody.body.wakeUp();
+      if (inst.mesh) {
+        inst.mesh.quaternion.copy(curQ);
+      }
       return [curQ.x, curQ.y, curQ.z, curQ.w];
     }
   }
 
-  /**
-   * Physics substep controller for the currently dragged object.
-   * Uses a velocity-clamped spring/PD law on the dynamic Rapier rigid body so the object
-   * moves smoothly toward the 3D cursor while respecting collisions with the floor,
-   * platforms, obstacles, and other dynamic objects.
-   */
+  public resetObjectRotation(objectId?: string): [number, number, number, number] | null {
+    const id = objectId ?? this.grabbedObjectId ?? this.selectedObjectId ?? this.instrumentFactory.activeInstrumentId;
+    if (!id) return null;
+    const inst = this.instrumentFactory.instruments.get(id);
+    if (!inst) return null;
+
+    this.targetQuaternion.set(0, 0, 0, 1);
+    inst.managedBody.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+    inst.managedBody.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    inst.managedBody.body.wakeUp();
+    if (inst.mesh) {
+      inst.mesh.quaternion.set(0, 0, 0, 1);
+    }
+    return [0, 0, 0, 1];
+  }
+
   public step(dt: number): void {
     if (!this.isDragging || !this.grabbedObjectId) return;
 

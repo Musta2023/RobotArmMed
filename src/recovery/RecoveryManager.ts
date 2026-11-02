@@ -138,7 +138,7 @@ export class RecoveryManager {
     }
 
     this.failureDetector.clearActiveFailure();
-    const msg = `Authorized recovery [${strategy}] executed (attempt #${this.recoveryAttempts}).`;
+    const msg = `Récupération autorisée [${strategy}] exécutée (tentative #${this.recoveryAttempts}).`;
     this.pendingPlan = null;
 
     if (onRestartTask) {

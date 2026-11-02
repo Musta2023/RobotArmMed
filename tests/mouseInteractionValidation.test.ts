@@ -334,4 +334,42 @@ describe('Section 10 — Full 3D Mouse Interaction & Robotic Manipulation Suite 
     expect(csvLines.length).toBe(dataset.total_steps + 1);
     expect(csvLines[0]).toContain('episode_id,step_index,timestamp,outcome,grasp_succeeded');
   });
+
+  it('TEST 10 — Direct Object 3D Rotation: rotates objects via Euler angles, mouse delta, and resets orientation with full physics stability', () => {
+    const inst = app.instrumentFactory.getActiveInstrument()!;
+    app.interactionModeManager.setMode('object');
+    app.objectManipulator.grabObject(inst.id);
+
+    // Initial orientation identity [0, 0, 0, 1]
+    const initQ = inst.getOrientation();
+    expect(initQ[3]).toBeCloseTo(1.0, 2);
+
+    // 1. Rotate 45° around Y (Yaw)
+    const yawQ = app.objectManipulator.rotateSelectedYaw(45, inst.id);
+    expect(yawQ).not.toBeNull();
+    app.stepSimulation(30);
+
+    const afterYawQ = inst.getOrientation();
+    // In quaternion, 45° around Y has y component ~ sin(22.5°) ~ 0.3826, w component ~ cos(22.5°) ~ 0.9238
+    expect(Math.abs(afterYawQ[1])).toBeGreaterThan(0.30);
+
+    // 2. Rotate with interactive mouse delta (simulate right-click drag)
+    const mouseRotQ = app.objectManipulator.rotateWithMouseDelta(40, -20, inst.id);
+    expect(mouseRotQ).not.toBeNull();
+    app.stepSimulation(30);
+
+    // 3. Reset rotation cleanly to identity [0, 0, 0, 1]
+    const resetQ = app.objectManipulator.resetObjectRotation(inst.id);
+    expect(resetQ).not.toBeNull();
+    expect(resetQ![3]).toBeCloseTo(1.0, 2);
+
+    // 4. Release object and verify it settles stably under gravity
+    app.objectManipulator.releaseObject();
+    app.stepSimulation(40);
+
+    expect(inst.managedBody.body.isDynamic()).toBe(true);
+    expect(inst.getPosition()[1]).toBeGreaterThan(0.015);
+    expect(inst.getSpeed()).toBeLessThan(0.05);
+  });
 });
+

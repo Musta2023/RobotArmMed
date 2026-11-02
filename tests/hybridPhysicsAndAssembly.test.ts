@@ -139,4 +139,36 @@ describe('Hybrid Physics & Mechanical Assembly Validation Suite (Phases 1–6)',
     expect(csvStr).toContain('episode_id,step_index');
     expect(csvStr).toContain('test_verified_ep');
   });
+
+  it('TEST G — J4 Forearm Torsion Mechanical Assembly & Swivel Alignment: verifies axial stator collar on Link 2 and rotating turntable on Link 3', () => {
+    // 1. Link 2 (Forearm) has stator collar components at its distal end (y ~ 0.150)
+    const link2Meshes = app.robotModel.linkGroups[2].children;
+    expect(link2Meshes.length).toBeGreaterThan(5);
+
+    // 2. Link 3 (Wrist Cradle) has rotor turntable components at its base (y ~ 0.003)
+    const link3Meshes = app.robotModel.linkGroups[3].children;
+    expect(link3Meshes.length).toBeGreaterThan(6);
+
+    // Verify J4 axis is pure Y-axis torsion ([0, 1, 0])
+    const j4Cfg = app.robotModel.config.joints[3];
+    expect(j4Cfg.axis).toEqual([0, 1, 0]);
+    expect(j4Cfg.pivotOffset).toEqual([0, 0.15, 0]);
+
+    // Verify J5 axis is X-axis pitch ([1, 0, 0]) at y = 0.130
+    const j5Cfg = app.robotModel.config.joints[4];
+    expect(j5Cfg.axis).toEqual([1, 0, 0]);
+    expect(j5Cfg.pivotOffset).toEqual([0, 0.13, 0]);
+
+    // Rotate J4 by 60 degrees (torsion) and verify Link 3 pivots around Y
+    app.jointController.setJointTargetPositionDeg(3, 60);
+    app.stepSimulation(60);
+    const angles = app.robotJoints.getCurrentAnglesDeg();
+    expect(angles[3]).toBeCloseTo(60, 0);
+
+    const j4Pivot = app.robotModel.jointPivots[3];
+    // In local space, quaternion around Y should have non-zero y component and 0 x,z components
+    expect(Math.abs(j4Pivot.quaternion.y)).toBeGreaterThan(0.4);
+    expect(Math.abs(j4Pivot.quaternion.x)).toBeCloseTo(0, 4);
+    expect(Math.abs(j4Pivot.quaternion.z)).toBeCloseTo(0, 4);
+  });
 });

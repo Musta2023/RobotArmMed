@@ -1,7 +1,7 @@
 /**
  * @file PhysicsControls.ts
- * Interactive Physics Parameters (Gravity, Mass, Friction, Restitution, Motor Drive)
- * and Surgical Instrument Spawning/Force Injection Panel.
+ * Paramètres physiques interactifs (Gravité, Masse, Friction, Restitution, Entraînement moteurs)
+ * et Panneau de Génération d'Objets Chirurgicaux / Injection d'Impulsions.
  */
 
 import { PhysicsWorld } from '../physics/PhysicsWorld.js';
@@ -53,7 +53,7 @@ export class PhysicsControls {
     const initFriction = activeInst ? activeInst.config.friction : 0.85;
     const initRestitution = activeInst ? activeInst.config.restitution : 0.05;
 
-    // 1. Physics World & Motor Drive Parameters (Collapsible to save vertical space)
+    // 1. Paramètres Physiques & Entraînement Moteurs (Déroulant)
     const physSec = document.createElement('section');
     physSec.className = 'panel-section';
     physSec.innerHTML = `
@@ -192,38 +192,38 @@ export class PhysicsControls {
       speedVal.textContent = `${s.toFixed(2)}×`;
     });
 
-    // 2. Surgical Object Spawning, Forces & Obstacle Management
+    // 2. Génération d'Objets Chirurgicaux, Forces & Obstacles
     const objSec = document.createElement('section');
     objSec.className = 'panel-section';
     objSec.innerHTML = `
       <div class="section-header">
         <h2>Objets & Obstacles</h2>
-        <span class="badge badge-info" id="obj-count-badge">${this.instrumentFactory.instruments.size} ACTIF</span>
+        <span class="badge badge-info" id="obj-count-badge">${this.instrumentFactory.instruments.size} ACTIFS</span>
       </div>
 
       <div class="select-row">
         <select id="select-instrument-preset" class="control-select">
           <option value="rectangular_instrument">Cube Inox (0.15 kg)</option>
-          <option value="cylindrical_instrument">Trocart (0.18 kg)</option>
-          <option value="surgical_tool">Pince chirurgicale (0.22 kg)</option>
+          <option value="cylindrical_instrument">Trocart Cylindrique (0.18 kg)</option>
+          <option value="surgical_tool">Pince Chirurgicale (0.22 kg)</option>
           <option value="small_metallic_object">Micro-clip Titane (0.10 kg)</option>
         </select>
-        <button type="button" class="btn btn-primary" id="btn-spawn-inst">Spawn</button>
+        <button type="button" class="btn btn-primary" id="btn-spawn-inst">Générer</button>
       </div>
 
       <div class="button-grid-2" style="margin-top: 4px;">
-        <button type="button" class="btn btn-secondary" id="btn-drop-gravity">Drop Test</button>
+        <button type="button" class="btn btn-secondary" id="btn-drop-gravity">Test Chute Libre</button>
         <button type="button" class="btn btn-secondary" id="btn-push-impulse">Impulsion (+1.5N)</button>
       </div>
 
       <div class="button-grid-2" style="margin-top: 4px;">
-        <button type="button" class="btn btn-secondary" id="btn-toggle-obstacle">Obstacle On/Off</button>
-        <button type="button" class="btn btn-secondary" id="btn-reset-objects">Reset Objets</button>
+        <button type="button" class="btn btn-secondary" id="btn-toggle-obstacle">Obstacle Actif/Inactif</button>
+        <button type="button" class="btn btn-secondary" id="btn-reset-objects">Réinitialiser Objets</button>
       </div>
 
       <div class="button-grid-2" style="margin-top: 4px;">
-        <button type="button" class="btn btn-secondary" id="btn-toggle-phys-debug">Debug Collisions</button>
-        <span class="badge badge-info" id="phys-debug-badge" style="display:flex;align-items:center;justify-content:center;">OFF</span>
+        <button type="button" class="btn btn-secondary" id="btn-toggle-phys-debug">Afficher Collisions</button>
+        <span class="badge badge-info" id="phys-debug-badge" style="display:flex;align-items:center;justify-content:center;">DÉSACTIVÉ</span>
       </div>
     `;
 
@@ -281,7 +281,7 @@ export class PhysicsControls {
       this.physicsDebugger.setEnabled(next, true);
       const badge = objSec.querySelector('#phys-debug-badge');
       if (badge) {
-        badge.textContent = next ? 'DEBUG: ON' : 'DEBUG: OFF';
+        badge.textContent = next ? 'ACTIVÉ' : 'DÉSACTIVÉ';
       }
     });
 
@@ -293,7 +293,7 @@ export class PhysicsControls {
     if (!this.container) return;
     const countBadge = this.container.querySelector('#obj-count-badge');
     if (countBadge) {
-      countBadge.textContent = `${this.instrumentFactory.instruments.size} ACTIVE`;
+      countBadge.textContent = `${this.instrumentFactory.instruments.size} ACTIFS`;
     }
   }
 }

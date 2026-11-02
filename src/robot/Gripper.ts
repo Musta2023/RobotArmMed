@@ -103,7 +103,60 @@ export class Gripper {
       roughness: 0.92
     });
 
-    // 1. Gripper Actuator Servo Box (mounted underneath linkage plate as in reference image)
+    // =========================================================================
+    // J6 Rotating Tool Flange & Mechanical Wrist Interface (Zero Gap Coupling)
+    // =========================================================================
+    // 1. Circular CNC silver tool flange / rotating servo horn mating flush with Link 4 distal collar
+    const j6FlangeGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.004, 28);
+    const j6Flange = new THREE.Mesh(j6FlangeGeo, silverScrewMat);
+    j6Flange.position.set(0, 0.002, 0);
+    j6Flange.castShadow = true;
+    this.root.add(j6Flange);
+
+    // Central drive spindle socket receiving the J6 motor shaft from Link 4
+    const j6SocketGeo = new THREE.CylinderGeometry(0.007, 0.007, 0.006, 20);
+    const j6Socket = new THREE.Mesh(j6SocketGeo, darkAnodizedMat);
+    j6Socket.position.set(0, 0.003, 0);
+    this.root.add(j6Socket);
+
+    // Perimeter retaining hex bolts on J6 tool flange (6 bolts)
+    const flangeBoltGeo = new THREE.CylinderGeometry(0.0016, 0.0016, 0.004, 10);
+    for (let k = 0; k < 6; k++) {
+      const angle = (k * Math.PI) / 3;
+      const bx = Math.cos(angle) * 0.012;
+      const bz = Math.sin(angle) * 0.012;
+      const bolt = new THREE.Mesh(flangeBoltGeo, silverScrewMat);
+      bolt.position.set(bx, 0.004, bz);
+      this.root.add(bolt);
+    }
+
+    // Heavy-duty structural adapter base block (rigidly attaches rotating horn to gripper chassis)
+    const adapterBlockGeo = new THREE.BoxGeometry(0.052, 0.018, 0.038);
+    const adapterBlock = new THREE.Mesh(adapterBlockGeo, darkAnodizedMat);
+    adapterBlock.position.set(0, 0.011, -0.004);
+    adapterBlock.castShadow = true;
+    adapterBlock.receiveShadow = true;
+    this.root.add(adapterBlock);
+
+    // Twin lateral mounting brackets / gussets bridging adapter base to chassis
+    const gussetGeo = new THREE.BoxGeometry(0.005, 0.026, 0.036);
+    const gussetScrewGeo = new THREE.CylinderGeometry(0.002, 0.002, 0.007, 10).rotateZ(Math.PI / 2);
+    for (const gx of [-0.026, 0.026]) {
+      const gusset = new THREE.Mesh(gussetGeo, linkageGreyMat);
+      gusset.position.set(gx, 0.015, -0.004);
+      gusset.castShadow = true;
+      this.root.add(gusset);
+
+      for (const gy of [0.006, 0.018]) {
+        const gussetScrew = new THREE.Mesh(gussetScrewGeo, silverScrewMat);
+        gussetScrew.position.set(gx * 1.05, gy, -0.004);
+        this.root.add(gussetScrew);
+      }
+    }
+
+    // =========================================================================
+    // 2. Gripper Actuator Servo Box & Realistic Mounting System
+    // =========================================================================
     const servoBox = new THREE.Mesh(
       new THREE.BoxGeometry(0.044, 0.042, 0.038),
       darkAnodizedMat
@@ -113,17 +166,60 @@ export class Gripper {
     servoBox.receiveShadow = true;
     this.root.add(servoBox);
 
-    // 2. Upper & Lower Linkage Chassis Plates (y: 0.015 -> 0.055 m)
-    const plateGeo = new THREE.BoxGeometry(0.082, 0.040, 0.004);
+    // Servo casing mounting tabs / ears clamping it to the chassis plates and base
+    const servoEarGeo = new THREE.BoxGeometry(0.054, 0.004, 0.034);
+    const earTop = new THREE.Mesh(servoEarGeo, darkAnodizedMat);
+    earTop.position.set(0, 0.042, -0.008);
+    earTop.castShadow = true;
+    this.root.add(earTop);
+
+    const earBottom = new THREE.Mesh(servoEarGeo, darkAnodizedMat);
+    earBottom.position.set(0, 0.008, -0.008);
+    earBottom.castShadow = true;
+    this.root.add(earBottom);
+
+    // 4 Silver M2.5 fastening screws clamping servo ears to the mounting gussets
+    const servoClampScrewGeo = new THREE.CylinderGeometry(0.0018, 0.0018, 0.006, 10).rotateZ(Math.PI / 2);
+    for (const ex of [-0.024, 0.024]) {
+      for (const ey of [0.008, 0.042]) {
+        const clampScrew = new THREE.Mesh(servoClampScrewGeo, silverScrewMat);
+        clampScrew.position.set(ex * 1.06, ey, -0.008);
+        this.root.add(clampScrew);
+      }
+    }
+
+    // Drive pinion boss coupling servo output spline to the driving gear
+    const pinionBossGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.012, 14).rotateX(Math.PI / 2);
+    const pinionBoss = new THREE.Mesh(pinionBossGeo, silverScrewMat);
+    pinionBoss.position.set(-0.015, 0.046, 0.008);
+    pinionBoss.castShadow = true;
+    this.root.add(pinionBoss);
+
+    // =========================================================================
+    // 3. Continuous Linkage Chassis Plates (Zero Gap, y: 0.008 -> 0.056 m)
+    // =========================================================================
+    const plateGeo = new THREE.BoxGeometry(0.082, 0.048, 0.004);
     const frontPlate = new THREE.Mesh(plateGeo, linkageGreyMat);
-    frontPlate.position.set(0, 0.036, 0.016);
+    frontPlate.position.set(0, 0.032, 0.016);
     frontPlate.castShadow = true;
     this.root.add(frontPlate);
 
     const backPlate = new THREE.Mesh(plateGeo, linkageGreyMat);
-    backPlate.position.set(0, 0.036, -0.016);
+    backPlate.position.set(0, 0.032, -0.016);
     backPlate.castShadow = true;
     this.root.add(backPlate);
+
+    // Silver socket-cap screws bolting front and back plates directly into adapter base block
+    const plateScrewGeo = new THREE.CylinderGeometry(0.002, 0.002, 0.008, 10).rotateX(Math.PI / 2);
+    for (const px of [-0.022, 0.022]) {
+      const frontScrew = new THREE.Mesh(plateScrewGeo, silverScrewMat);
+      frontScrew.position.set(px, 0.012, 0.019);
+      this.root.add(frontScrew);
+
+      const backScrew = new THREE.Mesh(plateScrewGeo, silverScrewMat);
+      backScrew.position.set(px, 0.012, -0.019);
+      this.root.add(backScrew);
+    }
 
     // Brass standoffs between gripper plates
     const standoffGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.032, 10);

@@ -353,7 +353,7 @@ export class GripperTargetController {
     this.motionController.commandJointAnglesDeg(closestIk.targetAnglesDeg);
 
     this.isTargetReachable = false;
-    this.warningMessage = `WARNING: Target [${desiredPos.x.toFixed(2)}, ${desiredPos.y.toFixed(2)}, ${desiredPos.z.toFixed(2)}] m is unreachable (d=${distFromShoulder.toFixed(2)} m). Stopped at closest valid reachable pose.`;
+    this.warningMessage = `WARNING / ATTENTION : Cible [${desiredPos.x.toFixed(2)}, ${desiredPos.y.toFixed(2)}, ${desiredPos.z.toFixed(2)}] m inaccessible (d=${distFromShoulder.toFixed(2)} m). Arrêt à la posture atteignable la plus proche.`;
     this._updateRingColor(false);
 
     const unreachableResult: IKSolverResult = {

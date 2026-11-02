@@ -339,6 +339,21 @@ export function solveInverseKinematics(
   }
 
   if (!isGeometricallyReachable || bestPosErr > 0.025) {
+    let failureDetail = `Target unreachable (distance=${distFromShoulder.toFixed(3)} m, maxReach=${maxReach.toFixed(2)} m).`;
+
+    if (distFromShoulder > maxReach + 0.02) {
+      failureDetail = `Target beyond outer workspace reach: distance=${distFromShoulder.toFixed(3)} m exceeds maxReach=${maxReach.toFixed(2)} m.`;
+    } else if (targetPos.y < -0.02) {
+      failureDetail = `Target below ground plane: y=${targetPos.y.toFixed(3)} m < -0.02 m.`;
+    } else {
+      const horizRadius = Math.hypot(targetPos.x, targetPos.z);
+      if (horizRadius < 0.23 && targetPos.y < 0.15) {
+        failureDetail = `Target in base inner dead-zone (radius=${horizRadius.toFixed(3)} m < minReach=0.23 m): too close to robot base for downward reach.`;
+      } else {
+        failureDetail = `Target unreachable: joint angle limits / singular posture (posErr=${(bestPosErr * 1000).toFixed(1)} mm, radius=${horizRadius.toFixed(3)} m).`;
+      }
+    }
+
     return {
       success: false,
       status: 'UNREACHABLE',
@@ -347,7 +362,7 @@ export function solveInverseKinematics(
       positionErrorMeters: bestPosErr,
       orientationErrorRad: bestOriErr,
       isReachable: false,
-      message: `Target unreachable (distance=${distFromShoulder.toFixed(3)} m, maxReach=${maxReach.toFixed(2)} m).`
+      message: failureDetail
     };
   }
 

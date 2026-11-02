@@ -1,8 +1,8 @@
 /**
  * @file RobotControls.ts
- * Interactive 3D Manipulation Modes (Object Mode / Robot Mode / AI Mode),
- * 3D Gizmo Translation & Rotation Controls, Mechanical Gripper Control,
- * and Collapsible Advanced 6-DOF Joint Motor Panel (Section 9).
+ * Modes d'interaction 3D (Mode Objet / Mode Robot / Mode IA),
+ * Contrôles Gizmo 3D (Translation & Rotation), Contrôle de la Pince Mécanique,
+ * et Panneau Déroulant Avancé des Moteurs 6-DOF.
  */
 
 import { RobotModel } from '../robot/RobotModel.js';
@@ -46,30 +46,30 @@ export class RobotControls {
     if (!this.container) return;
     this.container.innerHTML = '';
 
-    // 1. 3D Mouse Interaction Modes & Gizmo Section (Primary Workflow)
+    // 1. Modes d'Interaction 3D à la Souris & Gizmo
     const modeSec = document.createElement('section');
     modeSec.className = 'panel-section';
     modeSec.innerHTML = `
       <div class="section-header">
-        <h2>3D Interaction</h2>
-        <span class="badge badge-valid" id="active-mode-badge">OBJECT</span>
+        <h2>Interaction 3D</h2>
+        <span class="badge badge-valid" id="active-mode-badge">MODE OBJET</span>
       </div>
       <div class="button-grid-3">
-        <button type="button" class="btn btn-primary" id="btn-mode-object" title="Shortcut: 1">Object (1)</button>
-        <button type="button" class="btn btn-secondary" id="btn-mode-robot" title="Shortcut: 2">Robot (2)</button>
-        <button type="button" class="btn btn-secondary" id="btn-mode-ai" title="Shortcut: 3">AI (3)</button>
+        <button type="button" class="btn btn-primary" id="btn-mode-object" title="Raccourci : 1">Objet (1)</button>
+        <button type="button" class="btn btn-secondary" id="btn-mode-robot" title="Raccourci : 2">Robot (2)</button>
+        <button type="button" class="btn btn-secondary" id="btn-mode-ai" title="Raccourci : 3">IA (3)</button>
       </div>
       <div class="button-grid-2" style="margin-top: 4px;">
-        <button type="button" class="btn btn-secondary" id="btn-gizmo-translate" title="Shortcut: W">Move (W)</button>
-        <button type="button" class="btn btn-secondary" id="btn-gizmo-rotate" title="Shortcut: E">Rotate (E)</button>
+        <button type="button" class="btn btn-secondary" id="btn-gizmo-translate" title="Raccourci : W">Déplacer (W)</button>
+        <button type="button" class="btn btn-secondary" id="btn-gizmo-rotate" title="Raccourci : E">Pivoter (E)</button>
       </div>
       <div class="select-row" style="margin-top: 4px;">
-        <select id="select-drag-plane" class="control-select" title="Object 3D Drag Plane">
-          <option value="horizontal">Plan: Horizontal (XZ)</option>
-          <option value="vertical">Plan: Vertical (XY)</option>
-          <option value="camera">Plan: Vue Caméra</option>
+        <select id="select-drag-plane" class="control-select" title="Plan de glissement 3D">
+          <option value="horizontal">Plan : Horizontal (XZ)</option>
+          <option value="vertical">Plan : Vertical (XY)</option>
+          <option value="camera">Plan : Vue Caméra</option>
         </select>
-        <button type="button" class="btn btn-secondary" id="btn-reset-camera">Reset Cam</button>
+        <button type="button" class="btn btn-secondary" id="btn-reset-camera">Réinit. Cam</button>
       </div>
       <button type="button" class="btn btn-accent btn-full" id="btn-approach-object" style="margin-top: 4px;">
         Aligner Pince sur Objet
@@ -118,7 +118,7 @@ export class RobotControls {
       }
     });
 
-    // 2. Mechanical Gripper Control Section
+    // 2. Contrôle de la Pince Mécanique
     const gripSec = document.createElement('section');
     gripSec.className = 'panel-section';
     const gCfg = this.robotModel.config.gripper;
@@ -126,7 +126,7 @@ export class RobotControls {
     gripSec.innerHTML = `
       <div class="section-header">
         <h2>Pince Mécanique</h2>
-        <span class="badge badge-info" id="grip-status-badge">OPEN</span>
+        <span class="badge badge-info" id="grip-status-badge">OUVERTE</span>
       </div>
       <div class="button-grid-2">
         <button type="button" class="btn btn-secondary" id="btn-grip-open">Ouvrir (G)</button>
@@ -148,7 +148,7 @@ export class RobotControls {
       </div>
       <div class="gripper-opening-row">
         <div class="gripper-readout-header">
-          <span>Force serrage</span>
+          <span>Force de serrage</span>
           <strong id="grip-force-n">${gCfg.defaultGrippingForceNewtons.toFixed(1)} N</strong>
         </div>
         <input
@@ -186,14 +186,14 @@ export class RobotControls {
       this.robotModel.gripper.close(false);
     });
 
-    // 3. Inverse Kinematics Target Pose (Position XYZ + Orientation RPY)
+    // 3. Cible 6D Cinématique Inverse (Position XYZ + Orientation RPY)
     const ikSec = document.createElement('section');
     ikSec.className = 'panel-section';
     ikSec.innerHTML = `
       <details class="ik-collapsible">
         <summary class="section-header" style="cursor: pointer; list-style: none;">
           <h2>Cible 6D / IK Numérique</h2>
-          <span class="badge badge-info" id="ik-status-badge">READY</span>
+          <span class="badge badge-info" id="ik-status-badge">PRÊT</span>
         </summary>
         <div style="margin-top: 6px;">
           <div class="ik-input-grid">
@@ -234,11 +234,11 @@ export class RobotControls {
         const gCtrl = this.interactionModeManager.gripperTargetController;
         gCtrl.setTargetPosition([tx, ty, tz]);
         const res = gCtrl.setTargetOrientationEulerDeg([rx, ry, rz], true);
-        ikBadge.textContent = res.status;
+        ikBadge.textContent = res.status === 'SUCCESS' ? 'SUCCÈS' : res.status;
         ikBadge.className = res.isReachable ? 'badge badge-valid' : 'badge badge-danger';
       } else {
         const res = this.motionController.commandCartesianPose([tx, ty, tz]);
-        ikBadge.textContent = res.status;
+        ikBadge.textContent = res.status === 'SUCCESS' ? 'SUCCÈS' : res.status;
         ikBadge.className = res.success ? 'badge badge-valid' : 'badge badge-danger';
       }
     });
@@ -251,15 +251,15 @@ export class RobotControls {
       this.interactionModeManager?.gripperTargetController.syncToCurrentTCP();
     });
 
-    // 4. Advanced Collapsible 6-DOF Joint Motor Control Section
+    // 4. Panneau Déroulant Avancé des Moteurs 6-DOF
     const jointSec = document.createElement('section');
     jointSec.className = 'panel-section';
 
     jointSec.innerHTML = `
       <details class="advanced-joints-details">
         <summary class="section-header" style="cursor: pointer; list-style: none;">
-          <h2>Advanced: 6-DOF Joint Motors</h2>
-          <button type="button" class="btn-mini" id="btn-robot-home">Home Pose</button>
+          <h2>Avancé : Moteurs 6-DOF</h2>
+          <button type="button" class="btn-mini" id="btn-robot-home">Position Initiale</button>
         </summary>
         <div class="joints-list" id="joints-motor-list" style="margin-top: 8px;"></div>
       </details>
@@ -301,8 +301,8 @@ export class RobotControls {
           />
         </div>
         <div class="joint-telemetry-subrow">
-          <span id="j-vel-${cfg.id}">ω: 0.00 rad/s</span>
-          <span id="j-trq-${cfg.id}">τ: 0.00 / ${cfg.maxMotorTorqueNm.toFixed(0)} N·m</span>
+          <span id="j-vel-${cfg.id}">ω : 0.00 rad/s</span>
+          <span id="j-trq-${cfg.id}">τ : 0.00 / ${cfg.maxMotorTorqueNm.toFixed(0)} N·m</span>
         </div>
       `;
 
@@ -350,7 +350,7 @@ export class RobotControls {
     if (!this.container) return;
     const snap = this.robotModel.state.latestSnapshot;
 
-    // Refresh Mode & Reachability UI
+    // Rafraîchir l'Interface des Modes et de l'Atteignabilité
     if (this.interactionModeManager) {
       const m = this.interactionModeManager.mode;
       const modeBadge = this.container.querySelector('#active-mode-badge');
@@ -362,7 +362,7 @@ export class RobotControls {
 
       if (modeBadge) {
         modeBadge.textContent =
-          m === 'object' ? 'OBJECT MODE' : m === 'robot' ? 'ROBOT MODE' : 'AI MODE';
+          m === 'object' ? 'MODE OBJET' : m === 'robot' ? 'MODE ROBOT' : 'MODE IA';
       }
       if (btnObj && btnRob && btnAi) {
         btnObj.className = m === 'object' ? 'btn btn-primary' : 'btn btn-secondary';
@@ -385,8 +385,8 @@ export class RobotControls {
       if (!ref) return;
 
       ref.curReadout.textContent = `${jt.currentAngleDeg.toFixed(1)}° (→${jt.targetAngleDeg.toFixed(0)}°)`;
-      ref.velReadout.textContent = `ω: ${jt.angularVelocityRadPerSec.toFixed(2)} rad/s`;
-      ref.torqueReadout.textContent = `τ: ${Math.abs(jt.motorTorqueNm).toFixed(2)} / ${jt.maxMotorTorqueNm.toFixed(1)} N·m`;
+      ref.velReadout.textContent = `ω : ${jt.angularVelocityRadPerSec.toFixed(2)} rad/s`;
+      ref.torqueReadout.textContent = `τ : ${Math.abs(jt.motorTorqueNm).toFixed(2)} / ${jt.maxMotorTorqueNm.toFixed(1)} N·m`;
 
       if (typeof document !== 'undefined' && document.activeElement !== ref.slider) {
         ref.slider.value = jt.targetAngleDeg.toFixed(1);
@@ -412,21 +412,21 @@ export class RobotControls {
     }
     if (gripBadge && contactBanner) {
       if (grip.isGrasping) {
-        gripBadge.textContent = 'GRASP SECURED';
+        gripBadge.textContent = 'PRISE SÉCURISÉE';
         gripBadge.className = 'badge badge-valid';
         contactBanner.className = 'feedback-banner status-valid';
-        contactBanner.textContent = `Bilateral friction grasp active (Ff_max=${grip.frictionCapacityNewtons.toFixed(1)} N, obj=${grip.graspedObjectId}).`;
+        contactBanner.textContent = `Prise bilatérale par friction active (Ff_max=${grip.frictionCapacityNewtons.toFixed(1)} N, obj=${grip.graspedObjectId}).`;
       } else if (grip.isSlipping) {
-        gripBadge.textContent = 'SLIPPING!';
+        gripBadge.textContent = 'GLISSEMENT !';
         gripBadge.className = 'badge badge-danger';
         contactBanner.className = 'feedback-banner status-danger';
-        contactBanner.textContent = `Insufficient friction (${grip.frictionCapacityNewtons.toFixed(2)} N) — object slipping under gravity!`;
+        contactBanner.textContent = `Friction insuffisante (${grip.frictionCapacityNewtons.toFixed(2)} N) — l'objet glisse sous la gravité !`;
       } else {
         gripBadge.textContent =
-          grip.leftFingerContact || grip.rightFingerContact ? 'CONTACT' : 'UNGRASPED';
+          grip.leftFingerContact || grip.rightFingerContact ? 'CONTACT' : 'OUVERTE';
         gripBadge.className = 'badge badge-info';
         contactBanner.className = 'feedback-banner status-info';
-        contactBanner.textContent = `Contacts: L=${grip.leftFingerContact ? 'YES' : 'NO'} | R=${grip.rightFingerContact ? 'YES' : 'NO'}`;
+        contactBanner.textContent = `Contacts : G=${grip.leftFingerContact ? 'OUI' : 'NON'} | D=${grip.rightFingerContact ? 'OUI' : 'NON'}`;
       }
     }
   }

@@ -92,15 +92,15 @@ export class PlacementVerifier {
       isUprightAndAligned &&
       isPhysicallyStable;
 
-    let reason = 'Placement verified: instrument is stable on target tray.';
+    let reason = 'Dépose vérifiée : l\'instrument est stable sur le plateau cible.';
     if (!isDetachedFromGripper) {
-      reason = 'Placement failed: instrument is still held by gripper.';
+      reason = 'Échec dépose : l\'instrument est toujours tenu par la pince.';
     } else if (!withinPositionTolerance) {
-      reason = `Placement failed: instrument outside target tray (horizErr=${(horizontalDist * 1000).toFixed(1)} mm, vertErr=${(verticalError * 1000).toFixed(1)} mm).`;
+      reason = `Échec dépose : instrument hors du plateau cible (errHoriz=${(horizontalDist * 1000).toFixed(1)} mm, errVert=${(verticalError * 1000).toFixed(1)} mm).`;
     } else if (!isUprightAndAligned) {
-      reason = 'Placement failed: instrument tipped over / misaligned.';
+      reason = 'Échec dépose : instrument renversé / mal orienté.';
     } else if (!isPhysicallyStable) {
-      reason = `Placement unstable: residual velocity ${linSpeed.toFixed(3)} m/s.`;
+      reason = `Dépose instable : vitesse résiduelle de ${linSpeed.toFixed(3)} m/s.`;
     }
 
     return {

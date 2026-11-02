@@ -22,7 +22,8 @@ import { Gripper } from '../robot/Gripper.js';
 import { GraspManager } from './GraspManager.js';
 import { PlacementVerifier, PlacementVerificationReport } from './PlacementVerifier.js';
 import { InstrumentFactory } from '../objects/InstrumentFactory.js';
-import { TARGET_TRAY_POS } from '../objects/ObjectProperties.js';
+import { TARGET_TRAY_POS, SIX_OBJECT_DEFINITIONS } from '../objects/ObjectProperties.js';
+import { WorkZoneManager } from '../objects/WorkZoneManager.js';
 import {
   FailureDetector,
   OrchestratorFailurePayload
@@ -61,6 +62,11 @@ export class PickAndPlace {
   public instrumentFactory: InstrumentFactory;
   public failureDetector: FailureDetector;
   public recoveryManager: RecoveryManager;
+  public workZoneManager?: WorkZoneManager;
+
+  public isMultiObjectSequence: boolean = false;
+  public currentSequenceIndex: number = 0;
+  public multiObjectCompletedCount: number = 0;
 
   public state: PickAndPlaceState = 'IDLE';
   public stateHistory: PickAndPlaceState[] = ['IDLE'];
@@ -80,6 +86,7 @@ export class PickAndPlace {
     instrumentFactory: InstrumentFactory;
     failureDetector: FailureDetector;
     recoveryManager: RecoveryManager;
+    workZoneManager?: WorkZoneManager;
   }) {
     this.motionController = params.motionController;
     this.gripper = params.gripper;
@@ -88,6 +95,7 @@ export class PickAndPlace {
     this.instrumentFactory = params.instrumentFactory;
     this.failureDetector = params.failureDetector;
     this.recoveryManager = params.recoveryManager;
+    this.workZoneManager = params.workZoneManager;
   }
 
   private _transitionTo(nextState: PickAndPlaceState): void {
@@ -103,7 +111,21 @@ export class PickAndPlace {
   /**
    * Starts the 9-state Pick and Place manipulation task.
    */
-  public start(customTargetPos?: [number, number, number]): boolean {
+  public start(
+    customTargetPos?: [number, number, number],
+    options?: { multiObject?: boolean }
+  ): boolean {
+    if (options?.multiObject) {
+      this.isMultiObjectSequence = true;
+      this.currentSequenceIndex = 0;
+      this.multiObjectCompletedCount = 0;
+      if (this.workZoneManager) {
+        this.workZoneManager.resetSlotOccupancy();
+      }
+      return this._prepareAndStartObjectInSequence(0);
+    }
+
+    this.isMultiObjectSequence = false;
     const inst = this.instrumentFactory.getActiveInstrument();
     if (!inst) {
       this._triggerFailure(
@@ -121,6 +143,68 @@ export class PickAndPlace {
         customTargetPos[1],
         customTargetPos[2]
       );
+    } else {
+      this.targetPosition = [...TARGET_TRAY_POS];
+      this.placementVerifier.targetTrayCenter.set(
+        TARGET_TRAY_POS[0],
+        TARGET_TRAY_POS[1],
+        TARGET_TRAY_POS[2]
+      );
+    }
+
+    this.failureDetector.clearActiveFailure();
+    this.lastPlacementReport = null;
+    this.state = 'IDLE';
+    this.stateHistory = ['IDLE'];
+    this._transitionTo('APPROACH');
+    return true;
+  }
+
+  /**
+   * Starts the sequential 6-object pick and place task from Zone A to Zone B.
+   */
+  public startMultiObjectSequence(): boolean {
+    return this.start(undefined, { multiObject: true });
+  }
+
+  /**
+   * Prepares and approaches the next object in the 6-object sequence.
+   */
+  private _prepareAndStartObjectInSequence(index: number): boolean {
+    const sixIds = ['Object_01', 'Object_02', 'Object_03', 'Object_04', 'Object_05', 'Object_06'];
+    if (index >= sixIds.length) {
+      this._transitionTo('COMPLETE');
+      return true;
+    }
+
+    const nextId = sixIds[index];
+    const inst = this.instrumentFactory.instruments.get(nextId);
+    if (!inst) {
+      this._triggerFailure(
+        'grasp_failed',
+        'not_secured',
+        `Cannot start sequence: ${nextId} not found in scene.`
+      );
+      return false;
+    }
+
+    this.instrumentFactory.activeInstrumentId = nextId;
+    this.currentSequenceIndex = index;
+
+    const slots = this.workZoneManager?.zoneB.slots ?? [
+      [0.22, 0.02, 0.20],
+      [0.30, 0.02, 0.20],
+      [0.38, 0.02, 0.20],
+      [0.22, 0.02, 0.29],
+      [0.30, 0.02, 0.29],
+      [0.38, 0.02, 0.29]
+    ];
+    const targetSlot = slots[index] ?? TARGET_TRAY_POS;
+    this.targetPosition = [...targetSlot];
+    this.placementVerifier.targetTrayCenter.set(targetSlot[0], targetSlot[1], targetSlot[2]);
+
+    if (this.workZoneManager) {
+      this.workZoneManager.assignTargetSlot(index, nextId);
     }
 
     this.failureDetector.clearActiveFailure();
@@ -144,7 +228,7 @@ export class PickAndPlace {
       this.graspManager.physicsWorld.simulationTime
     );
     this.lastOrchestratorResult = payload;
-    this.statusMessage = `FAILURE [${errorCode}]: ${details}`;
+    this.statusMessage = `ÉCHEC [${errorCode}] : ${details}`;
     this.recoveryManager.handleFailure(payload);
     this.state = 'FAILED';
     this.stateHistory.push('FAILED');
@@ -163,8 +247,38 @@ export class PickAndPlace {
    */
   public authorizeAndRecover(): boolean {
     this.injectFailureNextGrasp = false;
+    const isMulti = this.isMultiObjectSequence;
+    const curIdx = this.currentSequenceIndex;
+
+    // Rescue objects trapped in inner dead-zone, fallen out of reach, or tipped over on target slot
+    const inst = this.instrumentFactory.getActiveInstrument();
+    if (inst) {
+      const pos = inst.managedBody.body.translation();
+      const horizR = Math.hypot(pos.x, pos.z);
+      if (horizR < 0.23 || pos.y < 0.005) {
+        const def = SIX_OBJECT_DEFINITIONS.find((d) => d.id === inst.config.id);
+        if (def) {
+          this.instrumentFactory.setInstrumentPose(def.id, def.initialPosition, def.initialQuaternion);
+        }
+      } else if (this.lastOrchestratorResult?.error === 'placement_failed') {
+        const height = inst.config.dimensions.height;
+        const targetSlot = this.targetPosition;
+        this.instrumentFactory.setInstrumentPose(
+          inst.config.id,
+          [targetSlot[0], targetSlot[1] + height / 2 + 0.002, targetSlot[2]],
+          [0, 0, 0, 1]
+        );
+      }
+    }
+
     const res = this.recoveryManager.authorizeAndExecuteRecovery(() => {
-      this.start();
+      if (isMulti) {
+        this.isMultiObjectSequence = true;
+        this.currentSequenceIndex = curIdx;
+        this._prepareAndStartObjectInSequence(curIdx);
+      } else {
+        this.start();
+      }
     });
     if (res.executed) {
       this.statusMessage = res.message;
@@ -181,7 +295,7 @@ export class PickAndPlace {
 
     switch (state) {
       case 'APPROACH': {
-        this.statusMessage = 'APPROACH: Aligning end-effector above surgical instrument...';
+        this.statusMessage = 'APPROCHE : Alignement du préhenseur au-dessus de l\'instrument...';
         this.gripper.open(false);
         // Subphase 0: move above instrument (with intentional offset if failure test requested)
         const offsetX = this.injectFailureNextGrasp ? 0.095 : 0.0;
@@ -197,19 +311,19 @@ export class PickAndPlace {
       }
 
       case 'GRASP': {
-        this.statusMessage = 'GRASP: Closing motorized gripper fingers...';
+        this.statusMessage = 'PRISE : Fermeture des mors motorisés de la pince...';
         this.gripper.close(false);
         break;
       }
 
       case 'GRASP_VERIFICATION': {
-        this.statusMessage = 'GRASP_VERIFICATION: Checking bilateral contact & Coulomb friction...';
+        this.statusMessage = 'VÉRIF. PRISE : Contrôle du contact bilatéral et du frottement...';
         // Evaluated in step()
         break;
       }
 
       case 'LIFT': {
-        this.statusMessage = 'LIFT: Raising grasped surgical instrument to safe clearance...';
+        this.statusMessage = 'LEVAGE : Élévation de l\'instrument à la hauteur de sécurité...';
         const ikLift = this.motionController.commandCartesianPose([
           bodyPos.x,
           safeHoverY,
@@ -222,7 +336,7 @@ export class PickAndPlace {
       }
 
       case 'TRANSPORT': {
-        this.statusMessage = 'TRANSPORT: Moving surgical instrument across workcell to Target Tray...';
+        this.statusMessage = 'TRANSPORT : Transfert de l\'instrument vers la Zone Cible B...';
         const ikTrans = this.motionController.commandCartesianPose([
           this.targetPosition[0],
           safeHoverY,
@@ -235,7 +349,7 @@ export class PickAndPlace {
       }
 
       case 'PLACE': {
-        this.statusMessage = 'PLACE: Lowering instrument onto Target Surgical Tray & releasing...';
+        this.statusMessage = 'DÉPOSE : Descente de l\'instrument sur le plateau cible et relâchement...';
         const placeY =
           this.targetPosition[1] + inst.config.dimensions.height / 2 + 0.002;
         const ikPlace = this.motionController.commandCartesianPose([
@@ -250,13 +364,13 @@ export class PickAndPlace {
       }
 
       case 'VERIFY_PLACEMENT': {
-        this.statusMessage = 'VERIFY_PLACEMENT: Checking tray position, orientation & stability...';
+        this.statusMessage = 'VÉRIF. DÉPOSE : Vérification de la position, orientation et stabilité...';
         // Evaluated in step()
         break;
       }
 
       case 'COMPLETE': {
-        this.statusMessage = 'COMPLETE: Surgical instrument placed and verified on Target Tray.';
+        this.statusMessage = 'TERMINÉ : Instrument chirurgical déposé et vérifié sur le plateau cible.';
         this.lastOrchestratorResult = {
           task_id: this.failureDetector.taskId,
           status: 'success',
@@ -314,7 +428,7 @@ export class PickAndPlace {
             const offsetX = this.injectFailureNextGrasp ? 0.095 : 0.0;
             const descendIk = this.motionController.commandCartesianPose([
               bodyPos.x + offsetX,
-              bodyPos.y,
+              Math.max(bodyPos.y, 0.035),
               bodyPos.z
             ]);
             if (!descendIk.success) {
@@ -386,10 +500,11 @@ export class PickAndPlace {
           if (this.motionController.hasReachedTarget(0.4)) {
             this.subPhase = 1;
             this.stateTimerSeconds = 0;
-            this.gripper.open(false);
+            this.graspManager.releaseGrasp();
+            this.gripper.open(true);
           }
         } else if (this.subPhase === 1) {
-          if (this.stateTimerSeconds >= 0.35 && !this.graspManager.isGrasping) {
+          if (this.stateTimerSeconds >= 0.20) {
             this.subPhase = 2;
             this.motionController.commandCartesianPose([
               this.targetPosition[0],
@@ -409,7 +524,23 @@ export class PickAndPlace {
         const report = this.placementVerifier.verify(inst, this.graspManager.isGrasping);
         this.lastPlacementReport = report;
         if (report.verified) {
-          this._transitionTo('COMPLETE');
+          if (this.workZoneManager) {
+            this.workZoneManager.markObjectPlacedAndStable(this.currentSequenceIndex, inst.config.id);
+          }
+          this.multiObjectCompletedCount++;
+
+          if (this.isMultiObjectSequence) {
+            const nextIdx = this.currentSequenceIndex + 1;
+            if (nextIdx < 6) {
+              this.statusMessage = `VÉRIFIÉ : ${inst.config.name} placé dans le Slot B${this.currentSequenceIndex + 1}. Passage à l\'objet ${nextIdx + 1}/6...`;
+              this._prepareAndStartObjectInSequence(nextIdx);
+            } else {
+              this.statusMessage = 'TERMINÉ : Les 6 objets ont été transférés avec succès de la Zone A vers la Zone B !';
+              this._transitionTo('COMPLETE');
+            }
+          } else {
+            this._transitionTo('COMPLETE');
+          }
         } else if (this.stateTimerSeconds >= 0.35) {
           this._triggerFailure('placement_failed', 'misplaced', report.reason);
         }
@@ -431,6 +562,46 @@ export class PickAndPlace {
     this.stateTimerSeconds = 0;
     this.lastPlacementReport = null;
     this.lastOrchestratorResult = null;
+    this.isMultiObjectSequence = false;
+    this.currentSequenceIndex = 0;
+    this.multiObjectCompletedCount = 0;
+    if (this.workZoneManager) {
+      this.workZoneManager.resetSlotOccupancy();
+    }
     this.failureDetector.clearActiveFailure();
+  }
+
+  /**
+   * Returns current 6-object sequence progress and status.
+   */
+  public getMultiObjectProgress(): {
+    total: number;
+    placed: number;
+    currentObject: string | null;
+    currentIndex: number;
+    progressPercent: number;
+    isSequenceRunning: boolean;
+  } {
+    const total = 6;
+    const placed = this.workZoneManager?.verifiedPlacedObjectIds.size ?? this.multiObjectCompletedCount;
+    const percent = Math.round((placed / total) * 100);
+    const sixIds = ['Object_01', 'Object_02', 'Object_03', 'Object_04', 'Object_05', 'Object_06'];
+    const currentId =
+      this.isMultiObjectSequence && this.currentSequenceIndex < 6
+        ? sixIds[this.currentSequenceIndex]
+        : null;
+
+    return {
+      total,
+      placed,
+      currentObject: currentId,
+      currentIndex: this.currentSequenceIndex,
+      progressPercent: percent,
+      isSequenceRunning:
+        this.isMultiObjectSequence &&
+        this.state !== 'IDLE' &&
+        this.state !== 'COMPLETE' &&
+        this.state !== 'FAILED'
+    };
   }
 }

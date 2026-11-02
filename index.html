@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SURGICAL ACTION AI — Robotic Digital Twin (Three.js + Rapier3D)</title>
+    <title>SURGICAL ACTION AI — Jumeau Numérique Robotique (Three.js + Rapier3D)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -13,82 +13,103 @@
   </head>
   <body>
     <div id="app-shell">
-      <!-- Top Real-Time Engineering Telemetry Bar -->
+      <!-- Barre Supérieure de Télémétrie d'Ingénierie en Temps Réel -->
       <header class="top-telemetry-bar">
         <div class="brand-cluster">
-          <div class="brand-dot"></div>
-          <div>
-            <div class="brand-title">SURGICAL ACTION AI</div>
-            <div class="brand-subtitle">6-DOF DOFBOT DIGITAL TWIN · RAPIER3D PHYSICS · ISAAC SIM READY</div>
+          <div class="brand-beacon" title="Simulateur Physique En Ligne (60 Hz)">
+            <span class="beacon-pulse"></span>
+            <span class="beacon-dot"></span>
+          </div>
+          <div class="brand-identity">
+            <div class="brand-title-row">
+              <span class="brand-title">SURGICAL ACTION AI</span>
+              <span class="brand-badge">DOFBOT 6-DOF</span>
+            </div>
+            <div class="brand-subtitle">JUMEAU NUMÉRIQUE PHYSIQUE · RAPIER3D · PRÊT POUR ISAAC SIM</div>
           </div>
         </div>
 
         <div class="telemetry-strip">
-          <div class="telemetry-item">
-            <span class="telemetry-label">SIM TIME</span>
-            <strong id="telemetry-sim-time">0.00 s</strong>
+          <!-- Groupe 1: Moteur & Horloges -->
+          <div class="telemetry-group">
+            <div class="telemetry-item">
+              <span class="telemetry-label">TEMPS SIM</span>
+              <strong id="telemetry-sim-time">0.00 s</strong>
+            </div>
+            <div class="telemetry-item">
+              <span class="telemetry-label">PAS DE TEMPS</span>
+              <strong id="telemetry-timestep">16.67 ms (60 Hz)</strong>
+            </div>
+            <div class="telemetry-item">
+              <span class="telemetry-label">FRÉQUENCE</span>
+              <strong id="telemetry-fps">60.0 FPS</strong>
+            </div>
           </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">TIMESTEP</span>
-            <strong id="telemetry-timestep">16.67 ms (60 Hz)</strong>
+
+          <div class="telemetry-divider"></div>
+
+          <!-- Groupe 2: Cinématique du Centre Outil (TCP) -->
+          <div class="telemetry-group">
+            <div class="telemetry-item tcp-item">
+              <span class="telemetry-label">POSE TCP (MONDE)</span>
+              <strong id="telemetry-tcp-pose">[0.000, 0.000, 0.000] m</strong>
+            </div>
           </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">FRAME RATE</span>
-            <strong id="telemetry-fps">60.0 FPS</strong>
-          </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">TCP POSE (WORLD)</span>
-            <strong id="telemetry-tcp-pose">[0.000, 0.000, 0.000] m</strong>
-          </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">ACTIVE INSTRUMENT</span>
-            <strong id="telemetry-obj-pose">Rectangular Surgical Block (0.15 kg)</strong>
-          </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">COLLISION STATUS</span>
-            <span id="telemetry-collision" class="telemetry-pill pill-valid">CLEAR</span>
-          </div>
-          <div class="telemetry-item">
-            <span class="telemetry-label">TASK STATE</span>
-            <span id="telemetry-task-state" class="telemetry-pill pill-info">IDLE</span>
+
+          <div class="telemetry-divider"></div>
+
+          <!-- Groupe 3: Instrument & Statut de Sécurité -->
+          <div class="telemetry-group">
+            <div class="telemetry-item instrument-item">
+              <span class="telemetry-label">INSTRUMENT ACTIF</span>
+              <strong id="telemetry-obj-pose" title="Pose de l'instrument actif">Bloc d'acier (0.15 kg)</strong>
+            </div>
+            <div class="telemetry-item status-item">
+              <span class="telemetry-label">COLLISION</span>
+              <span id="telemetry-collision" class="telemetry-pill pill-valid">AUCUNE</span>
+            </div>
+            <div class="telemetry-item status-item">
+              <span class="telemetry-label">ÉTAT TÂCHE</span>
+              <span id="telemetry-task-state" class="telemetry-pill pill-info">ATTENTE</span>
+            </div>
           </div>
         </div>
       </header>
 
-      <!-- Main 3-Column Engineering Workspace -->
+      <!-- Espace de Travail Principal à 3 Colonnes -->
       <div class="workspace-grid">
-        <!-- Left Dock: 6-DOF Joint Motor Drives, IK Target & Mechanical Gripper -->
+        <!-- Panneau Gauche : Moteurs 6-DOF, Cible IK & Pince Mécanique -->
         <aside class="side-dock left-dock" id="left-dock-content"></aside>
 
-        <!-- Central 3D Physics Viewport + Wrist Camera Picture-in-Picture -->
+        <!-- Vue 3D Centrale + Incrustation Caméra Poignet (PiP) -->
         <main class="center-viewport-wrapper">
           <div id="viewport-container" class="viewport-canvas-host"></div>
 
-          <!-- Top-Left Stage Hierarchy Overlay (Isaac Sim style) - Collapsible to declutter 3D view -->
+          <!-- Hiérarchie de Scène Déroulante (Style Isaac Sim / USD) -->
           <details class="viewport-stage-overlay">
-            <summary class="stage-overlay-title">STAGE HIERARCHY (6-DOF)</summary>
+            <summary class="stage-overlay-title">HIÉRARCHIE SCÈNE (6-DOF)</summary>
             <div class="stage-tree-list">
-              <div>/World/RobotBase (FixedBody)</div>
-              <div>&nbsp;&nbsp;└─ /J1_Base_RevoluteJoint (+Y)</div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;└─ /J2_Shoulder_Lift_RevoluteJoint</div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J3_Elbow_RevoluteJoint</div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J4_Wrist_Pitch_RevoluteJoint</div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J5_Wrist_Roll_RevoluteJoint</div>
-              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J6_Tool_Flange + Gripper</div>
+              <div>/Monde/BaseRobot (CorpsFixe)</div>
+              <div>&nbsp;&nbsp;└─ /J1_Base_Lacet (+Y)</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;└─ /J2_Épaule_Tangage</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J3_Coude_Tangage</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J4_Poignet_Tangage</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J5_Poignet_Roulis</div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ /J6_Bride_Outil + Pince</div>
             </div>
           </details>
 
-          <!-- Bottom-Left Wrist Camera Picture-in-Picture Sensor Feed - Minimizable -->
+          <!-- Caméra Poignet Incrustée (PiP) -->
           <div class="wrist-pip-card" id="wrist-pip-card-widget">
             <div class="wrist-pip-header">
-              <span>WRIST CAMERA (RGB)</span>
-              <button type="button" class="btn-pip-toggle" id="btn-toggle-pip" title="Minimize/Maximize">_</button>
+              <span>CAMÉRA POIGNET (RVB)</span>
+              <button type="button" class="btn-pip-toggle" id="btn-toggle-pip" title="Réduire / Agrandir">_</button>
             </div>
             <div id="wrist-pip-card-host"></div>
           </div>
         </main>
 
-        <!-- Right Dock: Physics Parameters, Object Spawner, Pick & Place & AI Recorder -->
+        <!-- Panneau Droit : Paramètres Physiques, Objets, Pick & Place & Enregistreur IA -->
         <aside class="side-dock right-dock">
           <div id="right-dock-top"></div>
           <div id="right-dock-bottom"></div>

@@ -11,7 +11,9 @@ import * as THREE from 'three';
 import { RigidBodyManager } from '../physics/RigidBodyManager.js';
 import {
   PICKUP_STATION_POS,
-  TARGET_TRAY_POS
+  TARGET_TRAY_POS,
+  ZONE_A_CONFIG,
+  ZONE_B_CONFIG
 } from '../objects/ObjectProperties.js';
 
 export class Environment {
@@ -58,83 +60,160 @@ export class Environment {
   }
 
   private _buildPickupAndTargetTrays(): void {
-    const padHeight = 0.02;
-    const padWidth = 0.16;
-    const padDepth = 0.16;
+    const padH = ZONE_A_CONFIG.dimensions.height; // 0.02 m
+    const padW = ZONE_A_CONFIG.dimensions.width;  // 0.32 m
+    const padD = ZONE_A_CONFIG.dimensions.depth;  // 0.24 m
 
-    // 1. Left Pickup Station Pad ([-0.30, 0.01, 0.24], top surface at y = 0.02 m)
-    const pickupMat = new THREE.MeshStandardMaterial({
-      color: 0x065f46,
-      emissive: 0x064e3b,
-      emissiveIntensity: 0.35,
-      metalness: 0.35,
-      roughness: 0.45
-    });
-    const pickupMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(padWidth, padHeight, padDepth),
-      pickupMat
-    );
-    pickupMesh.position.set(
-      PICKUP_STATION_POS[0],
-      padHeight / 2,
-      PICKUP_STATION_POS[2]
-    );
-    pickupMesh.receiveShadow = true;
-    this.root.add(pickupMesh);
-
-    this.bodyManager.createBody({
-      id: 'pickup_station_pad',
-      name: 'Pickup Station Pad (Zone A)',
-      category: 'environment',
-      motionType: 'fixed',
-      shape: 'box',
-      dimensions: { width: padWidth, height: padHeight, depth: padDepth },
-      position: [PICKUP_STATION_POS[0], padHeight / 2, PICKUP_STATION_POS[2]],
-      massKg: 10,
-      friction: 0.75,
-      restitution: 0.05
-    });
-
-    // 2. Right Target Surgical Tray ([+0.30, 0.01, 0.24], top surface at y = 0.02 m)
-    const trayMat = new THREE.MeshStandardMaterial({
-      color: 0x1e40af,
+    // =========================================================================
+    // 1. ZONE A — START (Large Blue Physical Pickup Platform)
+    // =========================================================================
+    const zoneAMat = new THREE.MeshStandardMaterial({
+      color: 0x1d4ed8, // Vibrant Cobalt Blue
       emissive: 0x1e3a8a,
-      emissiveIntensity: 0.35,
-      metalness: 0.4,
-      roughness: 0.4
+      emissiveIntensity: 0.40,
+      metalness: 0.35,
+      roughness: 0.42
     });
-    const trayMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(padWidth, padHeight, padDepth),
-      trayMat
+    const zoneAMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(padW, padH, padD),
+      zoneAMat
     );
-    trayMesh.position.set(
-      TARGET_TRAY_POS[0],
-      padHeight / 2,
-      TARGET_TRAY_POS[2]
+    zoneAMesh.name = 'Platform_ZoneA_Start';
+    zoneAMesh.position.set(
+      ZONE_A_CONFIG.center[0],
+      padH / 2,
+      ZONE_A_CONFIG.center[2]
     );
-    trayMesh.receiveShadow = true;
-    this.root.add(trayMesh);
+    zoneAMesh.receiveShadow = true;
+    this.root.add(zoneAMesh);
 
-    // Target reticle ring on Target Tray
-    const ringMesh = new THREE.Mesh(
-      new THREE.RingGeometry(0.026, 0.032, 28).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x60a5fa, side: THREE.DoubleSide })
-    );
-    ringMesh.position.set(TARGET_TRAY_POS[0], padHeight + 0.001, TARGET_TRAY_POS[2]);
-    this.root.add(ringMesh);
+    // Glowing border frame around Zone A
+    const frameGeoA = new THREE.BoxGeometry(padW + 0.008, 0.004, padD + 0.008);
+    const frameMatA = new THREE.MeshBasicMaterial({ color: 0x60a5fa, wireframe: true });
+    const frameA = new THREE.Mesh(frameGeoA, frameMatA);
+    frameA.position.set(ZONE_A_CONFIG.center[0], padH, ZONE_A_CONFIG.center[2]);
+    this.root.add(frameA);
 
-    this.bodyManager.createBody({
-      id: 'target_surgical_tray',
-      name: 'Target Surgical Tray (Zone B)',
+    // 6 Clearly marked pickup bays/slots [A1..A6]
+    for (let i = 0; i < ZONE_A_CONFIG.slots.length; i++) {
+      const slot = ZONE_A_CONFIG.slots[i];
+      // Subtle slot base pad
+      const slotPad = new THREE.Mesh(
+        new THREE.BoxGeometry(0.054, 0.001, 0.054),
+        new THREE.MeshStandardMaterial({
+          color: 0x1e3a8a,
+          roughness: 0.3,
+          metalness: 0.5
+        })
+      );
+      slotPad.position.set(slot[0], padH + 0.0005, slot[2]);
+      this.root.add(slotPad);
+
+      // Cyan ring indicator
+      const slotRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.016, 0.021, 24).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide })
+      );
+      slotRing.position.set(slot[0], padH + 0.001, slot[2]);
+      this.root.add(slotRing);
+    }
+
+    // Register physical Rapier body for Zone A
+    const zoneABody = this.bodyManager.createBody({
+      id: 'zone_a_start_platform',
+      name: 'ZONE A — START Platform',
       category: 'environment',
       motionType: 'fixed',
       shape: 'box',
-      dimensions: { width: padWidth, height: padHeight, depth: padDepth },
-      position: [TARGET_TRAY_POS[0], padHeight / 2, TARGET_TRAY_POS[2]],
-      massKg: 10,
+      dimensions: { width: padW, height: padH, depth: padD },
+      position: [ZONE_A_CONFIG.center[0], padH / 2, ZONE_A_CONFIG.center[2]],
+      massKg: 15,
       friction: 0.75,
       restitution: 0.05
     });
+    // Alias for backwards compatibility with tests expecting pickup_station_pad
+    this.bodyManager.bodies.set('pickup_station_pad', zoneABody);
+
+    // =========================================================================
+    // 2. ZONE B — TARGET (Large Green Physical Placement Platform)
+    // =========================================================================
+    const zoneBMat = new THREE.MeshStandardMaterial({
+      color: 0x059669, // Vibrant Emerald Green
+      emissive: 0x064e3b,
+      emissiveIntensity: 0.40,
+      metalness: 0.35,
+      roughness: 0.42
+    });
+    const zoneBMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(padW, padH, padD),
+      zoneBMat
+    );
+    zoneBMesh.name = 'Platform_ZoneB_Target';
+    zoneBMesh.position.set(
+      ZONE_B_CONFIG.center[0],
+      padH / 2,
+      ZONE_B_CONFIG.center[2]
+    );
+    zoneBMesh.receiveShadow = true;
+    this.root.add(zoneBMesh);
+
+    // Glowing border frame around Zone B
+    const frameGeoB = new THREE.BoxGeometry(padW + 0.008, 0.004, padD + 0.008);
+    const frameMatB = new THREE.MeshBasicMaterial({ color: 0x34d399, wireframe: true });
+    const frameB = new THREE.Mesh(frameGeoB, frameMatB);
+    frameB.position.set(ZONE_B_CONFIG.center[0], padH, ZONE_B_CONFIG.center[2]);
+    this.root.add(frameB);
+
+    // 6 Clearly marked target placement reticles [B1..B6] with concentric target rings
+    for (let i = 0; i < ZONE_B_CONFIG.slots.length; i++) {
+      const slot = ZONE_B_CONFIG.slots[i];
+      // Target reticle outer ring
+      const outerRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.024, 0.030, 28).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x34d399, side: THREE.DoubleSide })
+      );
+      outerRing.position.set(slot[0], padH + 0.001, slot[2]);
+      this.root.add(outerRing);
+
+      // Inner target bullseye dot
+      const innerDot = new THREE.Mesh(
+        new THREE.CircleGeometry(0.007, 18).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide })
+      );
+      innerDot.position.set(slot[0], padH + 0.0012, slot[2]);
+      this.root.add(innerDot);
+
+      // Crosshair alignment ticks
+      const tickH = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.036, 0.002).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x6ee7b7, side: THREE.DoubleSide })
+      );
+      tickH.position.set(slot[0], padH + 0.0011, slot[2]);
+      this.root.add(tickH);
+
+      const tickV = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.002, 0.036).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x6ee7b7, side: THREE.DoubleSide })
+      );
+      tickV.position.set(slot[0], padH + 0.0011, slot[2]);
+      this.root.add(tickV);
+    }
+
+    // Register physical Rapier body for Zone B
+    const zoneBBody = this.bodyManager.createBody({
+      id: 'zone_b_target_platform',
+      name: 'ZONE B — TARGET Platform',
+      category: 'environment',
+      motionType: 'fixed',
+      shape: 'box',
+      dimensions: { width: padW, height: padH, depth: padD },
+      position: [ZONE_B_CONFIG.center[0], padH / 2, ZONE_B_CONFIG.center[2]],
+      massKg: 15,
+      friction: 0.75,
+      restitution: 0.05
+    });
+    // Alias for backwards compatibility with tests expecting target_surgical_tray
+    this.bodyManager.bodies.set('target_surgical_tray', zoneBBody);
 
     // 3. Configurable Obstacle Pillar (disabled by default; can be enabled for collision testing)
     const obsMat = new THREE.MeshStandardMaterial({

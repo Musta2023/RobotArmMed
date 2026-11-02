@@ -9,7 +9,8 @@ import * as THREE from 'three';
 import {
   InstrumentPresetType,
   SurgicalInstrumentConfig,
-  INSTRUMENT_PRESETS
+  INSTRUMENT_PRESETS,
+  SIX_OBJECT_DEFINITIONS
 } from './ObjectProperties.js';
 import {
   RigidBodyManager,
@@ -248,6 +249,9 @@ export class InstrumentFactory {
    * Removes an instrument from both Three.js and Rapier3D.
    */
   public removeInstrument(id: string): boolean {
+    if (id === 'surgical_instrument_01' && !this.instruments.has(id) && this.instruments.has('Object_01')) {
+      id = 'Object_01';
+    }
     const inst = this.instruments.get(id);
     if (!inst) return false;
 
@@ -344,6 +348,9 @@ export class InstrumentFactory {
     linearVelocity: THREE.Vector3;
     angularVelocity: THREE.Vector3;
   } | null {
+    if (id === 'surgical_instrument_01' && !this.instruments.has(id) && this.instruments.has('Object_01')) {
+      id = 'Object_01';
+    }
     const inst = this.instruments.get(id);
     if (!inst) return null;
 
@@ -358,5 +365,51 @@ export class InstrumentFactory {
       linearVelocity: new THREE.Vector3(lv.x, lv.y, lv.z),
       angularVelocity: new THREE.Vector3(av.x, av.y, av.z)
     };
+  }
+
+  /**
+   * Spawns the complete set of 6 distinct objects (Object_01 to Object_06)
+   * in ZONE A (Start Zone).
+   */
+  public setupSixZoneObjects(): ActiveSurgicalInstrument[] {
+    const existingIds = Array.from(this.instruments.keys());
+    for (const id of existingIds) {
+      this.removeInstrument(id);
+    }
+
+    const spawned: ActiveSurgicalInstrument[] = [];
+    for (const def of SIX_OBJECT_DEFINITIONS) {
+      const active = this.spawnInstrument(def.presetType, {
+        id: def.id,
+        name: def.name,
+        shape: def.shape,
+        dimensions: def.dimensions,
+        graspWidthMeters: def.graspWidthMeters,
+        massKg: def.massKg,
+        friction: def.friction,
+        restitution: def.restitution,
+        materialType: def.materialType,
+        colorHex: def.colorHex,
+        position: def.initialPosition,
+        initialPosition: def.initialPosition,
+        initialQuaternion: def.initialQuaternion
+      });
+      spawned.push(active);
+    }
+
+    this.activeInstrumentId = 'Object_01';
+    return spawned;
+  }
+
+  /**
+   * Teleports all 6 objects back to their rest positions in ZONE A and clears velocities.
+   */
+  public resetAllInstrumentsToZoneA(): void {
+    for (const def of SIX_OBJECT_DEFINITIONS) {
+      const inst = this.instruments.get(def.id);
+      if (inst) {
+        this.setInstrumentPose(def.id, def.initialPosition, def.initialQuaternion);
+      }
+    }
   }
 }

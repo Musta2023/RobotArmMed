@@ -30,7 +30,7 @@ export class InteractionModeManager {
   public cameraManager: CameraManager;
   public domElement: HTMLElement | null;
 
-  public statusText: string = 'OBJECT MODE: Hover & left-click any object to grab and move in 3D.';
+  public statusText: string = 'MODE OBJET : Survoler et cliquer sur un objet pour le déplacer en 3D.';
   private raycaster: THREE.Raycaster = new THREE.Raycaster();
 
   constructor(params: {
@@ -76,19 +76,19 @@ export class InteractionModeManager {
         this.cameraManager.orbitControls.enabled = true;
       }
       this.statusText =
-        'MODE A (OBJECT MODE): Click & drag any object in 3D (Shift = Vertical, Wheel = Depth/Height).';
+        'MODE OBJET : Clic gauche pour déplacer en 3D (Shift = Vertical, Molette = Hauteur/Profondeur).';
     } else if (nextMode === 'robot') {
       this.pickAndPlace.reset();
       this.gripperTargetController.setGizmoEnabled(true);
       this.statusText =
-        'MODE B (ROBOT MODE): Drag or rotate the 3D Gripper Target Gizmo (W = Translate, E = Rotate, Space = Gripper).';
+        'MODE ROBOT : Manipuler le Gizmo 3D de la pince (W = Déplacer, E = Pivoter, Touche G = Pince).';
     } else if (nextMode === 'ai') {
       this.gripperTargetController.setGizmoEnabled(false);
       if (this.cameraManager.orbitControls) {
         this.cameraManager.orbitControls.enabled = true;
       }
       this.statusText =
-        'MODE C (AI MODE): Manual mouse manipulation disabled. Autonomous AI / Policy control active.';
+        'MODE IA : Manipulation manuelle désactivée. Contrôle autonome par politique IA actif.';
     }
   }
 
@@ -127,13 +127,36 @@ export class InteractionModeManager {
   }
 
   private _bindViewportEvents(dom: HTMLElement): void {
+    let isRightClickRotating = false;
+
+    // Prevent default context menu on 3D canvas so right-click is fully usable for rotation
+    dom.addEventListener('contextmenu', (e: MouseEvent) => {
+      e.preventDefault();
+    });
+
     dom.addEventListener('pointermove', (e: PointerEvent) => {
       if (this.mode === 'ai') return;
       const [ndcX, ndcY] = this._computeNDC(e, dom);
 
       if (this.mode === 'object') {
-        if (this.objectManipulator.isDragging) {
-          const desiredMode: DragPlaneMode = e.shiftKey ? 'vertical' : this.objectManipulator.dragPlaneMode;
+        if (isRightClickRotating) {
+          const targetId =
+            this.objectManipulator.grabbedObjectId ??
+            this.objectManipulator.selectedObjectId ??
+            this.instrumentFactory.activeInstrumentId;
+          if (targetId) {
+            this.objectManipulator.rotateWithMouseDelta(
+              e.movementX,
+              e.movementY,
+              targetId,
+              this.cameraManager.mainCamera
+            );
+            this.statusText = `Rotation de [${targetId}] en 3D (Lacet/Tangage)`;
+          }
+        } else if (this.objectManipulator.isDragging) {
+          const desiredMode: DragPlaneMode = e.shiftKey
+            ? 'vertical'
+            : this.objectManipulator.dragPlaneMode;
           if (desiredMode !== this.objectManipulator.dragPlaneMode) {
             this.objectManipulator.setDragPlaneMode(
               desiredMode,
@@ -146,7 +169,7 @@ export class InteractionModeManager {
             this.cameraManager.mainCamera
           );
           if (pos) {
-            this.statusText = `Dragging [${this.objectManipulator.grabbedObjectId}] @ [${pos[0].toFixed(3)}, ${pos[1].toFixed(3)}, ${pos[2].toFixed(3)}] m`;
+            this.statusText = `Déplacement de [${this.objectManipulator.grabbedObjectId}] @ [${pos[0].toFixed(3)}, ${pos[1].toFixed(3)}, ${pos[2].toFixed(3)}] m`;
           }
         } else {
           const hovered = this.objectManipulator.updateHoverByRay(
@@ -160,33 +183,67 @@ export class InteractionModeManager {
     });
 
     dom.addEventListener('pointerdown', (e: PointerEvent) => {
-      if (e.button !== 0 || this.mode === 'ai') return;
+      if (this.mode === 'ai') return;
       const [ndcX, ndcY] = this._computeNDC(e, dom);
 
       if (this.mode === 'object') {
-        const grabbed = this.objectManipulator.grabObjectByRay(
-          ndcX,
-          ndcY,
-          this.cameraManager.mainCamera
-        );
-        if (grabbed) {
-          dom.style.cursor = 'grabbing';
-          if (this.cameraManager.orbitControls) {
-            this.cameraManager.orbitControls.enabled = false;
+        if (e.button === 0) {
+          // Left-click: grab object for translation
+          const grabbed = this.objectManipulator.grabObjectByRay(
+            ndcX,
+            ndcY,
+            this.cameraManager.mainCamera
+          );
+          if (grabbed) {
+            dom.style.cursor = 'grabbing';
+            if (this.cameraManager.orbitControls) {
+              this.cameraManager.orbitControls.enabled = false;
+            }
+            const p = grabbed.getPosition();
+            this.statusText = `Objet saisi : ${grabbed.config.name} (${grabbed.config.massKg.toFixed(2)} kg) @ [${p[0].toFixed(3)}, ${p[1].toFixed(3)}, ${p[2].toFixed(3)}] m`;
+            return;
           }
-          const p = grabbed.getPosition();
-          this.statusText = `Grabbed ${grabbed.config.name} (${grabbed.config.massKg.toFixed(2)} kg) @ [${p[0].toFixed(3)}, ${p[1].toFixed(3)}, ${p[2].toFixed(3)}] m`;
-          return;
-        }
 
-        // If user clicked directly on the robot gripper while in Object Mode, switch to Robot Mode
-        if (this.raycastGripper(ndcX, ndcY)) {
-          this.setMode('robot');
+          // If user clicked directly on the robot gripper while in Object Mode, switch to Robot Mode
+          if (this.raycastGripper(ndcX, ndcY)) {
+            this.setMode('robot');
+          }
+        } else if (e.button === 2) {
+          // Right-click: direct 3D interactive rotation
+          e.preventDefault();
+          const hit = this.objectManipulator.raycastObject(
+            ndcX,
+            ndcY,
+            this.cameraManager.mainCamera
+          );
+          const targetId =
+            hit?.instrument.id ??
+            this.objectManipulator.grabbedObjectId ??
+            this.objectManipulator.selectedObjectId ??
+            this.instrumentFactory.activeInstrumentId;
+
+          if (targetId) {
+            this.objectManipulator.selectedObjectId = targetId;
+            this.instrumentFactory.activeInstrumentId = targetId;
+            isRightClickRotating = true;
+            dom.style.cursor = 'crosshair';
+            if (this.cameraManager.orbitControls) {
+              this.cameraManager.orbitControls.enabled = false;
+            }
+            this.statusText = `Rotation de [${targetId}] par glisser-droit (Ctrl+Molette, touches R/T, ou Gizmo E)...`;
+          }
         }
       }
     });
 
-    window.addEventListener('pointerup', () => {
+    window.addEventListener('pointerup', (e: PointerEvent) => {
+      if (isRightClickRotating) {
+        isRightClickRotating = false;
+        if (dom) dom.style.cursor = 'default';
+        if (this.cameraManager.orbitControls) {
+          this.cameraManager.orbitControls.enabled = true;
+        }
+      }
       if (this.objectManipulator.isDragging) {
         const released = this.objectManipulator.releaseObject();
         if (dom) dom.style.cursor = 'default';
@@ -194,7 +251,7 @@ export class InteractionModeManager {
           this.cameraManager.orbitControls.enabled = true;
         }
         if (released) {
-          this.statusText = `Released ${released.config.name} — falling naturally under gravity.`;
+          this.statusText = `Objet relâché : ${released.config.name} — chute naturelle sous gravité.`;
         }
       }
     });
@@ -202,13 +259,22 @@ export class InteractionModeManager {
     dom.addEventListener(
       'wheel',
       (e: WheelEvent) => {
-        if (this.mode === 'object' && this.objectManipulator.isDragging) {
-          e.preventDefault();
-          const stepMeters = e.deltaY < 0 ? 0.018 : -0.018;
-          if (e.shiftKey) {
-            this.objectManipulator.adjustGrabbedDepth(stepMeters);
-          } else {
-            this.objectManipulator.adjustGrabbedHeight(stepMeters);
+        if (this.mode === 'object') {
+          if (e.ctrlKey || e.altKey) {
+            e.preventDefault();
+            const deltaYaw = e.deltaY < 0 ? 15 : -15;
+            this.objectManipulator.rotateSelectedYaw(deltaYaw);
+            this.statusText = `Rotation Lacet : ${deltaYaw > 0 ? '+' : ''}${deltaYaw}° (Ctrl/Alt + Molette)`;
+            return;
+          }
+          if (this.objectManipulator.isDragging) {
+            e.preventDefault();
+            const stepMeters = e.deltaY < 0 ? 0.018 : -0.018;
+            if (e.shiftKey) {
+              this.objectManipulator.adjustGrabbedDepth(stepMeters);
+            } else {
+              this.objectManipulator.adjustGrabbedHeight(stepMeters);
+            }
           }
         }
       },
@@ -226,10 +292,18 @@ export class InteractionModeManager {
       if (e.key === '1') this.setMode('object');
       else if (e.key === '2') this.setMode('robot');
       else if (e.key === '3') this.setMode('ai');
-      else if (e.key.toLowerCase() === 'w' && this.mode === 'robot') {
+      else if (e.key.toLowerCase() === 'w') {
         this.setGizmoTransformMode('translate');
-      } else if (e.key.toLowerCase() === 'e' && this.mode === 'robot') {
+      } else if (e.key.toLowerCase() === 'e') {
         this.setGizmoTransformMode('rotate');
+      } else if (this.mode === 'object' && e.key.toLowerCase() === 'r') {
+        const deltaYaw = e.shiftKey ? -15 : 15;
+        this.objectManipulator.rotateSelectedYaw(deltaYaw);
+        this.statusText = `Rotation Lacet : ${deltaYaw > 0 ? '+' : ''}${deltaYaw}° (Touche R)`;
+      } else if (this.mode === 'object' && e.key.toLowerCase() === 't') {
+        const deltaPitch = e.shiftKey ? -15 : 15;
+        this.objectManipulator.rotateSelectedPitch(deltaPitch);
+        this.statusText = `Rotation Tangage : ${deltaPitch > 0 ? '+' : ''}${deltaPitch}° (Touche T)`;
       } else if (e.key.toLowerCase() === 'g') {
         if (this.robotModel.gripper.isClosingCommandActive) {
           this.robotModel.gripper.open(false);

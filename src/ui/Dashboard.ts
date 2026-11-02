@@ -1,7 +1,7 @@
 /**
  * @file Dashboard.ts
- * Master Telemetry & UI Coordinator for the Surgical Action AI Digital Twin.
- * Synchronizes top-bar telemetry, left/right engineering docks, and sub-panels.
+ * Coordonnateur maître de la télémétrie et de l'interface utilisateur pour le jumeau numérique Surgical Action AI.
+ * Synchronise la barre supérieure de télémétrie, les panneaux latéraux d'ingénierie et les sous-composants.
  */
 
 import { PhysicsWorld } from '../physics/PhysicsWorld.js';
@@ -34,7 +34,7 @@ export class Dashboard {
   }
 
   /**
-   * Updates all real-time telemetry indicators and refreshes sub-panels.
+   * Met à jour tous les indicateurs télémétriques en temps réel et rafraîchit les sous-panneaux.
    */
   public update(nowMs: number = performance.now()): void {
     if (this.lastFrameTimeMs > 0) {
@@ -66,20 +66,32 @@ export class Dashboard {
       simTimeEl.textContent = `${this.config.physicsWorld.simulationTime.toFixed(2)} s`;
     }
     if (dtEl) {
-      dtEl.textContent = `${(this.config.physicsWorld.fixedTimestep * 1000).toFixed(2)} ms (${Math.round(1 / this.config.physicsWorld.fixedTimestep)} Hz)`;
+      dtEl.textContent = `${(this.config.physicsWorld.fixedTimestep * 1000).toFixed(2)} ms (60 Hz)`;
     }
     if (fpsEl) {
       fpsEl.textContent = `${this.fps.toFixed(1)} FPS`;
+      if (this.fps >= 50) {
+        fpsEl.style.color = '#34d399';
+      } else if (this.fps >= 30) {
+        fpsEl.style.color = '#fbbf24';
+      } else {
+        fpsEl.style.color = '#f87171';
+      }
     }
     if (tcpEl) {
-      tcpEl.textContent = `[${tcpPos[0].toFixed(3)}, ${tcpPos[1].toFixed(3)}, ${tcpPos[2].toFixed(3)}] m | RPY [${tcpEuler[0].toFixed(0)}°, ${tcpEuler[1].toFixed(0)}°, ${tcpEuler[2].toFixed(0)}°]`;
+      tcpEl.innerHTML = `<span class="val-xyz">[${tcpPos[0].toFixed(3)}, ${tcpPos[1].toFixed(3)}, ${tcpPos[2].toFixed(3)}]</span> <span class="val-unit">m</span> <span class="val-sep">·</span> <span class="val-rpy">RPY [${tcpEuler[0].toFixed(0)}°, ${tcpEuler[1].toFixed(0)}°, ${tcpEuler[2].toFixed(0)}°]</span>`;
+      tcpEl.title = `Pose TCP Monde : [${tcpPos[0].toFixed(4)}, ${tcpPos[1].toFixed(4)}, ${tcpPos[2].toFixed(4)}] m | RPY : [${tcpEuler[0].toFixed(1)}°, ${tcpEuler[1].toFixed(1)}°, ${tcpEuler[2].toFixed(1)}°]`;
     }
 
     const activeInst = this.config.instrumentFactory.getActiveInstrument();
     if (objPoseEl && activeInst) {
       const pose = this.config.instrumentFactory.getInstrumentWorldPose(activeInst.config.id);
+      const cleanName = activeInst.config.name
+        .replace('Surgical Calibration Cube ', '')
+        .replace('Surgical Instrument ', '');
+      objPoseEl.textContent = `${cleanName} (${(activeInst.config.massKg * 1000).toFixed(0)}g)`;
       if (pose) {
-        objPoseEl.textContent = `${activeInst.config.name} (${activeInst.config.massKg.toFixed(2)} kg) @ [${pose.position.x.toFixed(3)}, ${pose.position.y.toFixed(3)}, ${pose.position.z.toFixed(3)}] m`;
+        objPoseEl.title = `${activeInst.config.name} (${activeInst.config.massKg.toFixed(2)} kg) @ [${pose.position.x.toFixed(3)}, ${pose.position.y.toFixed(3)}, ${pose.position.z.toFixed(3)}] m`;
       }
     }
 
@@ -87,16 +99,32 @@ export class Dashboard {
     const contacts = this.config.collisionManager.activeContacts;
     if (colEl) {
       if (prohibited.length > 0) {
-        colEl.textContent = `COLLISION (${prohibited[0].bodyIdA} ↔ ${prohibited[0].bodyIdB})`;
+        colEl.textContent = 'COLLISION';
         colEl.className = 'telemetry-pill pill-danger';
+        colEl.title = `Collision interdite détectée : ${prohibited[0].bodyIdA} ↔ ${prohibited[0].bodyIdB}`;
       } else {
-        colEl.textContent = `CLEAR (${contacts.length} contacts)`;
+        colEl.textContent = contacts.length > 0 ? `AUCUNE (${contacts.length})` : 'AUCUNE';
         colEl.className = 'telemetry-pill pill-valid';
+        colEl.title = `Sécurité collision : ${contacts.length} contacts physiques actifs`;
       }
     }
 
     if (stateEl) {
-      stateEl.textContent = this.config.pickAndPlace.state;
+      const stateMapFr: Record<string, string> = {
+        IDLE: 'ATTENTE',
+        APPROACH: 'APPROCHE',
+        GRASP: 'PRISE',
+        GRASP_VERIFICATION: 'VÉRIF. PRISE',
+        LIFT: 'LEVAGE',
+        TRANSPORT: 'TRANSPORT',
+        PLACE: 'DÉPOSE',
+        VERIFY_PLACEMENT: 'VÉRIF. DÉPOSE',
+        COMPLETE: 'TERMINÉ',
+        FAILED: 'ÉCHEC'
+      };
+      const curState = this.config.pickAndPlace.state;
+      stateEl.textContent = stateMapFr[curState] ?? curState;
+      stateEl.title = `État Pick & Place : ${curState}`;
     }
   }
 }
