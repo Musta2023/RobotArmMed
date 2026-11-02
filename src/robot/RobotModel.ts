@@ -250,6 +250,64 @@ export class RobotModel {
     this.linkGroups[5].add(this.gripper.root);
   }
 
+  private _createChannelPlateGeometry(
+    lengthY: number,
+    depthZ: number,
+    thicknessX: number,
+    hasBottomEar: boolean = true,
+    hasTopEar: boolean = true,
+    cutoutCount: number = 2
+  ): THREE.BufferGeometry {
+    const shape = new THREE.Shape();
+    const halfD = depthZ / 2;
+    const radius = halfD;
+
+    shape.moveTo(halfD, 0);
+    if (hasBottomEar) {
+      shape.absarc(0, 0, radius, 0, -Math.PI, true);
+    } else {
+      shape.lineTo(-halfD, 0);
+    }
+    shape.lineTo(-halfD, lengthY);
+    if (hasTopEar) {
+      shape.absarc(0, lengthY, radius, Math.PI, 0, true);
+    } else {
+      shape.lineTo(halfD, lengthY);
+    }
+    shape.lineTo(halfD, 0);
+
+    if (cutoutCount > 0 && lengthY > 0.09) {
+      const usableH = lengthY - 2 * radius;
+      if (usableH > 0.02) {
+        const windowH = Math.min(0.045, usableH / (cutoutCount + 0.6));
+        const windowW = depthZ * 0.48;
+        const spacing = usableH / cutoutCount;
+        for (let k = 0; k < cutoutCount; k++) {
+          const cy = radius + spacing * (k + 0.5);
+          const hole = new THREE.Path();
+          const hw = windowW / 2;
+          const hh = windowH / 2;
+          hole.moveTo(-hw, cy - hh);
+          hole.lineTo(hw, cy - hh);
+          hole.lineTo(hw, cy + hh);
+          hole.lineTo(-hw, cy + hh);
+          hole.closePath();
+          shape.holes.push(hole);
+        }
+      }
+    }
+
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      steps: 1,
+      depth: thicknessX,
+      bevelEnabled: false
+    });
+    geo.rotateY(Math.PI / 2);
+    geo.translate(-thicknessX / 2, 0, 0);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
   private _buildLink0Turret(
     group: THREE.Group,
     greenMat: THREE.Material,
@@ -290,21 +348,27 @@ export class RobotModel {
     servoBody.castShadow = true;
     group.add(servoBody);
 
-    for (const sx of [-0.032, 0.032]) {
-      const sidePlate = new THREE.Mesh(
-        new THREE.BoxGeometry(0.006, 0.115, 0.054),
-        greenMat
-      );
-      sidePlate.position.set(sx, 0.060, 0);
+    const plateGeo = this._createChannelPlateGeometry(0.120, 0.048, 0.004, false, true, 1);
+    const screwGeo = new THREE.CylinderGeometry(0.0035, 0.0035, 0.010, 12).rotateZ(Math.PI / 2);
+
+    for (const sx of [-0.031, 0.031]) {
+      const sidePlate = new THREE.Mesh(plateGeo, greenMat);
+      sidePlate.position.set(sx, 0, 0);
       sidePlate.castShadow = true;
       group.add(sidePlate);
 
+      // Bearing & horn flange at top ear (y = 0.120), concentric with J2 pivot!
       const horn = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.018, 0.018, 0.008, 20).rotateZ(Math.PI / 2),
+        new THREE.CylinderGeometry(0.015, 0.015, 0.004, 20).rotateZ(Math.PI / 2),
         hornMat
       );
-      horn.position.set(sx * 1.08, 0.12, 0);
+      horn.position.set(sx * 1.05, 0.120, 0);
+      horn.castShadow = true;
       group.add(horn);
+
+      const centerPin = new THREE.Mesh(screwGeo, servoMat);
+      centerPin.position.set(sx * 1.10, 0.120, 0);
+      group.add(centerPin);
     }
   }
 
@@ -314,54 +378,75 @@ export class RobotModel {
     widthX: number,
     greenMat: THREE.Material,
     servoMat: THREE.Material,
-    hornMat: THREE.Material
+    hornMat: THREE.Material,
+    hasBottomEar: boolean = true,
+    hasTopEar: boolean = true,
+    cutoutCount: number = 2
   ): void {
     const halfX = widthX / 2;
+    const plateThickness = 0.004;
+    const depthZ = 0.048;
+    const plateGeo = this._createChannelPlateGeometry(
+      lengthY,
+      depthZ,
+      plateThickness,
+      hasBottomEar,
+      hasTopEar,
+      cutoutCount
+    );
 
-    // Left and right green anodized aluminum side plates
+    const screwGeo = new THREE.CylinderGeometry(0.0035, 0.0035, 0.008, 12).rotateZ(Math.PI / 2);
+
+    // Left and right profiled aluminum side plates with concentric pivot ears
     for (const sx of [-halfX, halfX]) {
-      const sideWall = new THREE.Mesh(
-        new THREE.BoxGeometry(0.006, lengthY, 0.048),
-        greenMat
-      );
-      sideWall.position.set(sx, lengthY / 2, 0);
+      const sideWall = new THREE.Mesh(plateGeo, greenMat);
+      sideWall.position.set(sx, 0, 0);
       sideWall.castShadow = true;
       sideWall.receiveShadow = true;
       group.add(sideWall);
 
-      // Silver circular servo horn at base pivot
-      const horn = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.017, 0.017, 0.008, 20).rotateZ(Math.PI / 2),
-        hornMat
-      );
-      horn.position.set(sx * 1.06, 0, 0);
-      group.add(horn);
+      // Concentric silver pivot bearing cap & retaining pin at bottom pivot (y = 0)
+      if (hasBottomEar) {
+        const horn = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.015, 0.015, 0.003, 20).rotateZ(Math.PI / 2),
+          hornMat
+        );
+        horn.position.set(sx * 1.04, 0, 0);
+        horn.castShadow = true;
+        group.add(horn);
+
+        const centerPin = new THREE.Mesh(screwGeo, servoMat);
+        centerPin.position.set(sx * 1.08, 0, 0);
+        group.add(centerPin);
+      }
     }
 
-    // Green cross-bridge plates
-    const bridgeGeo = new THREE.BoxGeometry(widthX, 0.018, 0.048);
+    // Green cross-bridge stiffener plates
+    const bridgeW = widthX - plateThickness * 2;
+    const bridgeGeo = new THREE.BoxGeometry(bridgeW, 0.014, depthZ * 0.72);
+
     const bottomBridge = new THREE.Mesh(bridgeGeo, greenMat);
-    bottomBridge.position.set(0, 0.025, 0);
+    bottomBridge.position.set(0, Math.min(0.035, lengthY * 0.25), 0);
     group.add(bottomBridge);
 
-    const topBridge = new THREE.Mesh(bridgeGeo, greenMat);
-    topBridge.position.set(0, lengthY - 0.025, 0);
-    group.add(topBridge);
+    if (lengthY > 0.09) {
+      const topBridge = new THREE.Mesh(bridgeGeo, greenMat);
+      topBridge.position.set(0, lengthY - 0.030, 0);
+      group.add(topBridge);
+    }
 
-    // Internal black serial bus servo actuator
+    // Internal black digital servo actuator
+    const servoW = Math.min(bridgeW - 0.004, 0.044);
+    const servoH = Math.min(lengthY * 0.5, 0.075);
     const servo = new THREE.Mesh(
-      new THREE.BoxGeometry(widthX - 0.014, Math.min(lengthY * 0.55, 0.075), 0.038),
+      new THREE.BoxGeometry(servoW, servoH, depthZ * 0.78),
       servoMat
     );
-    servo.position.set(0, lengthY - 0.04, 0);
+    servo.position.set(0, lengthY - servoH / 2 - 0.012, 0);
     servo.castShadow = true;
     group.add(servo);
   }
 
-  /**
-   * Builds the J5 Wrist link AND the top-mounted DofBot USB Camera bracket + lens
-   * shown in the reference image.
-   */
   private _buildWristAndCameraLink(
     group: THREE.Group,
     greenMat: THREE.Material,
@@ -369,7 +454,7 @@ export class RobotModel {
     hornMat: THREE.Material,
     brassMat: THREE.Material
   ): void {
-    this._buildGreenUBracketLink(group, 0.08, 0.058, greenMat, servoMat, hornMat);
+    this._buildGreenUBracketLink(group, 0.08, 0.046, greenMat, servoMat, hornMat, true, false, 0);
 
     // 1. Rigid Black Metal L-Bracket connecting green wrist channel to camera
     // Horizontal foot plate anchored flush to front face of green bracket (z = 0.024)
