@@ -109,6 +109,7 @@ export class Gripper {
     // 1. Circular CNC silver tool flange / rotating servo horn mating flush with Link 4 distal collar
     const j6FlangeGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.004, 28);
     const j6Flange = new THREE.Mesh(j6FlangeGeo, silverScrewMat);
+    j6Flange.name = 'J6_RotatingToolFlange';
     j6Flange.position.set(0, 0.002, 0);
     j6Flange.castShadow = true;
     this.root.add(j6Flange);
@@ -161,6 +162,7 @@ export class Gripper {
       new THREE.BoxGeometry(0.044, 0.042, 0.038),
       darkAnodizedMat
     );
+    servoBox.name = 'Gripper_ServoHousing';
     servoBox.position.set(0, 0.025, -0.008);
     servoBox.castShadow = true;
     servoBox.receiveShadow = true;
