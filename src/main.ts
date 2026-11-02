@@ -11,6 +11,7 @@ import { PhysicsWorld } from './physics/PhysicsWorld.js';
 import { RigidBodyManager } from './physics/RigidBodyManager.js';
 import { CollisionManager } from './physics/CollisionManager.js';
 import { JointManager } from './physics/JointManager.js';
+import { PhysicsModeManager } from './physics/PhysicsModeManager.js';
 import { PhysicsDebugger } from './physics/PhysicsDebugger.js';
 import { RobotJoints } from './robot/RobotJoints.js';
 import { Gripper } from './robot/Gripper.js';
@@ -63,6 +64,15 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
   const robotJoints = new RobotJoints(bodyManager, jointManager);
   const gripper = new Gripper(bodyManager);
   const robotModel = new RobotModel(robotJoints, gripper);
+
+  // 2b. Initialize Hybrid Physics Mode Manager (Kinematic vs Dynamic authority)
+  const physicsModeManager = new PhysicsModeManager({
+    robotJoints,
+    robotModel,
+    jointManager,
+    physicsWorld,
+    initialMode: 'KINEMATIC'
+  });
 
   // 3. Initialize Surgical Environment & Instrument Factory
   const environment = new Environment(bodyManager);
@@ -206,6 +216,8 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
         },
         contacts: collisionManager.activeContacts,
         taskState: pickAndPlace.state,
+        physicsMode: physicsModeManager.mode.toLowerCase() as 'kinematic' | 'dynamic',
+        isGraspVerified: graspManager.isGrasping && !graspStatus.isSlipping,
         gripperTargetPose: {
           position: targetPose.position,
           orientation: targetPose.quaternion
@@ -346,6 +358,7 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     environment,
     sceneManager,
     robotJoints,
+    physicsModeManager,
     gripper,
     robotModel,
     jointController,

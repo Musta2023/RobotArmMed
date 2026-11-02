@@ -24,6 +24,10 @@ export class Gripper {
   public rightFingerGroup: THREE.Group;
   public leftGearMesh!: THREE.Mesh;
   public rightGearMesh!: THREE.Mesh;
+  public leftDriveBarGroup!: THREE.Group;
+  public rightDriveBarGroup!: THREE.Group;
+  public leftFollowerBarGroup!: THREE.Group;
+  public rightFollowerBarGroup!: THREE.Group;
   public graspFrame: THREE.Group;
 
   public leftFingerBody!: ManagedRigidBody;
@@ -154,6 +158,45 @@ export class Gripper {
     rightScrew.position.set(0.015, 0.050, 0.019);
     this.root.add(rightScrew);
 
+    // 3b. 4-Bar Parallel Linkage Drive and Follower Bars (left & right)
+    const barLength = 0.042;
+    const barThick = 0.005;
+    const barWidth = 0.008;
+
+    const buildLinkageBar = (length: number, mat: THREE.Material): THREE.Group => {
+      const g = new THREE.Group();
+      const arm = new THREE.Mesh(
+        new THREE.BoxGeometry(barWidth, length, barThick),
+        mat
+      );
+      arm.position.set(0, length / 2, 0);
+      arm.castShadow = true;
+      g.add(arm);
+      const endPin = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.003, 0.003, barThick + 0.004, 10).rotateX(Math.PI / 2),
+        silverScrewMat
+      );
+      endPin.position.set(0, length, 0);
+      g.add(endPin);
+      return g;
+    };
+
+    this.leftDriveBarGroup = buildLinkageBar(barLength, darkAnodizedMat);
+    this.leftDriveBarGroup.position.set(-0.015, 0.050, 0.008);
+    this.root.add(this.leftDriveBarGroup);
+
+    this.rightDriveBarGroup = buildLinkageBar(barLength, darkAnodizedMat);
+    this.rightDriveBarGroup.position.set(0.015, 0.050, 0.008);
+    this.root.add(this.rightDriveBarGroup);
+
+    this.leftFollowerBarGroup = buildLinkageBar(barLength, linkageGreyMat);
+    this.leftFollowerBarGroup.position.set(-0.028, 0.038, -0.008);
+    this.root.add(this.leftFollowerBarGroup);
+
+    this.rightFollowerBarGroup = buildLinkageBar(barLength, linkageGreyMat);
+    this.rightFollowerBarGroup.position.set(0.028, 0.038, -0.008);
+    this.root.add(this.rightFollowerBarGroup);
+
     // 4. Left & Right Movable Finger Assemblies (y: 0.060 -> 0.132 m)
     const [fThick, fLen, fDepth] = this.config.fingerDimensions;
     const padThick = 0.003;
@@ -260,9 +303,22 @@ export class Gripper {
 
     // Rotate synchronous gears proportionally to finger opening
     const gearAngle = (clamped - this.config.minOpeningMeters) * 12;
+    // Closed-loop 4-bar linkage kinematics:
+    const strokeRange = this.config.maxOpeningMeters - this.config.minOpeningMeters;
+    const strokeRatio = strokeRange > 0 ? (clamped - this.config.minOpeningMeters) / strokeRange : 0;
+    const crankAngleRad = strokeRatio * 0.52;
+
+    if (this.leftDriveBarGroup && this.rightDriveBarGroup) {
+      this.leftDriveBarGroup.rotation.z = crankAngleRad;
+      this.rightDriveBarGroup.rotation.z = -crankAngleRad;
+    }
+    if (this.leftFollowerBarGroup && this.rightFollowerBarGroup) {
+      this.leftFollowerBarGroup.rotation.z = crankAngleRad;
+      this.rightFollowerBarGroup.rotation.z = -crankAngleRad;
+    }
     if (this.leftGearMesh && this.rightGearMesh) {
-      this.leftGearMesh.rotation.z = gearAngle;
-      this.rightGearMesh.rotation.z = -gearAngle;
+      this.leftGearMesh.rotation.z = crankAngleRad;
+      this.rightGearMesh.rotation.z = -crankAngleRad;
     }
 
     this.root.updateMatrixWorld(true);

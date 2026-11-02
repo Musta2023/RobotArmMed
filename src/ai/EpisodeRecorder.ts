@@ -51,6 +51,8 @@ export interface EpisodeStepFrame {
     is_prohibited: boolean;
   }>;
   grasp_succeeded: boolean;
+  physics_mode?: 'kinematic' | 'dynamic';
+  grasp_verified?: boolean;
   task_state: PickAndPlaceState;
   status: 'running' | 'success' | 'failure';
 }
@@ -122,6 +124,8 @@ export class EpisodeRecorder {
       orientation: [number, number, number, number];
     };
     objectMetadata?: ObjectMetadataSnapshot;
+    physicsMode?: 'kinematic' | 'dynamic';
+    isGraspVerified?: boolean;
   }): EpisodeStepFrame | null {
     if (!this.isRecording) return null;
 
@@ -178,6 +182,8 @@ export class EpisodeRecorder {
       })),
       grasp_succeeded: observation.gripper_state.is_grasping,
       task_state: taskState,
+      physics_mode: params.physicsMode ?? 'kinematic',
+      grasp_verified: params.isGraspVerified ?? (observation.gripper_state.is_grasping && !observation.gripper_state.is_slipping),
       status
     };
 

@@ -17,6 +17,22 @@ import {
 export type BodyMotionType = 'fixed' | 'dynamic' | 'kinematicPosition' | 'kinematicVelocity';
 export type ColliderShapeType = 'box' | 'cylinder' | 'sphere' | 'capsule' | 'convexHull';
 
+export interface ExtraColliderSpec {
+  shape: ColliderShapeType;
+  dimensions: {
+    width?: number;
+    height?: number;
+    depth?: number;
+    radius?: number;
+    vertices?: Float32Array;
+  };
+  offset?: [number, number, number];
+  quaternion?: [number, number, number, number];
+  friction?: number;
+  restitution?: number;
+  isSensor?: boolean;
+}
+
 export interface RigidBodySpec {
   id: string;
   name: string;
@@ -50,6 +66,7 @@ export interface RigidBodySpec {
   contactSkin?: number;
   collisionGroupMembership?: number;
   collisionGroupFilter?: number;
+  extraColliders?: ExtraColliderSpec[];
   mesh?: THREE.Object3D;
 }
 
@@ -58,6 +75,7 @@ export interface ManagedRigidBody {
   body: RAPIER.RigidBody;
   collider: RAPIER.Collider;
   mesh?: THREE.Object3D;
+  extraColliders?: RAPIER.Collider[];
   principalInertia: [number, number, number];
   encodedCollisionGroups: number;
   lastAppliedForceNewtons: [number, number, number];
@@ -285,6 +303,62 @@ export class RigidBodyManager {
 
     const collider = this.physicsWorld.world.createCollider(colliderDesc, body);
 
+    const extraColliders: RAPIER.Collider[] = [];
+    if (spec.extraColliders && spec.extraColliders.length > 0) {
+      for (const extra of spec.extraColliders) {
+        let extraDesc: RAPIER.ColliderDesc;
+        const eDims = extra.dimensions;
+        if (extra.shape === 'cylinder') {
+          const r = eDims.radius ?? (eDims.width ?? 0.03) / 2;
+          const halfH = (eDims.height ?? 0.06) / 2;
+          extraDesc = RAPIER.ColliderDesc.cylinder(halfH, r);
+        } else if (extra.shape === 'sphere') {
+          const r = eDims.radius ?? (eDims.width ?? 0.03) / 2;
+          extraDesc = RAPIER.ColliderDesc.ball(r);
+        } else if (extra.shape === 'capsule') {
+          const r = eDims.radius ?? 0.02;
+          const halfH = Math.max(((eDims.height ?? 0.08) - 2 * r) / 2, 0.005);
+          extraDesc = RAPIER.ColliderDesc.capsule(halfH, r);
+        } else {
+          const hx = (eDims.width ?? 0.04) / 2;
+          const hy = (eDims.height ?? 0.04) / 2;
+          const hz = (eDims.depth ?? 0.04) / 2;
+          extraDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
+        }
+
+        if (extra.offset) {
+          extraDesc.setTranslation(extra.offset[0], extra.offset[1], extra.offset[2]);
+        }
+        if (extra.quaternion) {
+          extraDesc.setRotation({
+            x: extra.quaternion[0],
+            y: extra.quaternion[1],
+            z: extra.quaternion[2],
+            w: extra.quaternion[3]
+          });
+        }
+        if (extra.isSensor) {
+          extraDesc.setSensor(true);
+        }
+        extraDesc
+          .setFriction(Math.max(0, extra.friction ?? spec.friction))
+          .setRestitution(Math.min(Math.max(extra.restitution ?? spec.restitution, 0), 1))
+          .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Average)
+          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+          .setCollisionGroups(encodedGroups)
+          .setSolverGroups(encodedGroups)
+          .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
+          .setActiveCollisionTypes(
+            RAPIER.ActiveCollisionTypes.DEFAULT |
+              RAPIER.ActiveCollisionTypes.KINEMATIC_FIXED
+          );
+
+        const extraCol = this.physicsWorld.world.createCollider(extraDesc, body);
+        extraColliders.push(extraCol);
+        this.colliderHandleToId.set(extraCol.handle, spec.id);
+      }
+    }
+
     const managed: ManagedRigidBody = {
       spec: {
         ...spec,
@@ -293,6 +367,7 @@ export class RigidBodyManager {
       },
       body,
       collider,
+      extraColliders,
       mesh: spec.mesh,
       principalInertia,
       encodedCollisionGroups: encodedGroups,
@@ -313,6 +388,11 @@ export class RigidBodyManager {
     if (!managed) return false;
 
     this.colliderHandleToId.delete(managed.collider.handle);
+    if (managed.extraColliders) {
+      for (const col of managed.extraColliders) {
+        this.colliderHandleToId.delete(col.handle);
+      }
+    }
     this.physicsWorld.world.removeRigidBody(managed.body);
     this.bodies.delete(id);
     return true;

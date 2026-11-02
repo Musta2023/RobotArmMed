@@ -51,13 +51,29 @@ export class RobotJoints {
       motionType: 'fixed',
       shape: 'cylinder',
       dimensions: {
-        radius: 0.10,
+        radius: 0.075,
         height: this.config.baseHeightMeters
       },
       position: [
         this.config.basePosition[0],
         this.config.baseHeightMeters / 2,
         this.config.basePosition[2]
+      ],
+      extraColliders: [
+        {
+          shape: 'box',
+          dimensions: { width: 0.21, height: 0.010, depth: 0.25 },
+          offset: [0, 0.005 - this.config.baseHeightMeters / 2, -0.025],
+          friction: 0.7,
+          restitution: 0.05
+        },
+        {
+          shape: 'box',
+          dimensions: { width: 0.11, height: 0.028, depth: 0.095 },
+          offset: [0, 0.024 - this.config.baseHeightMeters / 2, -0.085],
+          friction: 0.5,
+          restitution: 0.05
+        }
       ],
       massKg: this.config.baseMassKg,
       friction: 0.6,

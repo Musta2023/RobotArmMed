@@ -177,6 +177,15 @@ export class RobotModel {
     baseServo.position.set(0, 0.062, 0);
     this.root.add(baseServo);
 
+    // Stationary turntable bearing collar sleeve extending through the middle disk
+    const bearingCollar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.028, 0.032, 0.016, 24),
+      silverHornMat
+    );
+    bearingCollar.position.set(0, 0.115, 0);
+    bearingCollar.castShadow = true;
+    this.root.add(bearingCollar);
+
     // =========================================================================
     // B. Articulated Kinematic Chain (J1..J6)
     // =========================================================================
@@ -255,6 +264,22 @@ export class RobotModel {
     topDisk.position.set(0, -0.008, 0);
     topDisk.castShadow = true;
     group.add(topDisk);
+
+    // Rotating turntable bearing hub ring (mechanically mates with base stator collar)
+    const rotatingHub = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.038, 0.038, 0.010, 28),
+      hornMat
+    );
+    rotatingHub.position.set(0, -0.017, 0);
+    rotatingHub.castShadow = true;
+    group.add(rotatingHub);
+
+    const shaftCoupler = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.022, 0.014, 20),
+      servoMat
+    );
+    shaftCoupler.position.set(0, -0.017, 0);
+    group.add(shaftCoupler);
 
     // Green shoulder U-bracket cradle + black digital servo
     const servoBody = new THREE.Mesh(
@@ -388,7 +413,8 @@ export class RobotModel {
 
     // Attach the Three.js PerspectiveCamera looking forward along the tool (+Y) toward the gripper
     this.wristCamera.position.set(0, 0.026, 0.012);
-    this.wristCamera.lookAt(0, 0.16, -0.01);
+    const [lx, ly, lz] = this.config.wristCamera.lookAtOffset;
+    this.wristCamera.lookAt(lx, ly, lz);
     camMountGroup.add(this.wristCamera);
 
     group.add(camMountGroup);

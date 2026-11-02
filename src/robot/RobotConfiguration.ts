@@ -106,7 +106,7 @@ export const DEFAULT_ROBOT_CONFIGURATION: RobotSystemConfiguration = {
       linkMassKg: 0.85,
       linkLengthMeters: 0.32,
       centerOfMassLocal: [0, 0.16, 0],
-      colliderDimensions: [0.085, 0.30, 0.075]
+      colliderDimensions: [0.072, 0.32, 0.048]
     },
     {
       id: 'J3',
@@ -131,8 +131,8 @@ export const DEFAULT_ROBOT_CONFIGURATION: RobotSystemConfiguration = {
     },
     {
       id: 'J4',
-      name: 'Wrist Rotation (Forearm Roll)',
-      shortName: 'J4 Wrist Roll',
+      name: 'Forearm Rotation (Forearm Roll)',
+      shortName: 'J4 Forearm Roll',
       index: 3,
       pivotOffset: [0, 0.15, 0],
       axis: [0, 1, 0],
