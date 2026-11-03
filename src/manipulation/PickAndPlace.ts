@@ -497,23 +497,27 @@ export class PickAndPlace {
 
       case 'PLACE': {
         if (this.subPhase === 0) {
-          if (this.motionController.hasReachedTarget(0.4)) {
+          // Wait until robot has decelerated and settled cleanly at the placement pose
+          if (this.motionController.hasReachedTarget(0.08) || this.stateTimerSeconds >= 1.2) {
             this.subPhase = 1;
             this.stateTimerSeconds = 0;
             this.graspManager.releaseGrasp();
-            this.gripper.open(true);
+            this.gripper.open(false);
           }
         } else if (this.subPhase === 1) {
-          if (this.stateTimerSeconds >= 0.20) {
+          // Allow 0.35s for fingers to open fully and object to settle flat under gravity
+          if (this.stateTimerSeconds >= 0.35) {
             this.subPhase = 2;
+            this.stateTimerSeconds = 0;
             this.motionController.commandCartesianPose([
               this.targetPosition[0],
-              0.22,
+              0.24,
               this.targetPosition[2]
             ]);
           }
         } else if (this.subPhase === 2) {
-          if (this.motionController.hasReachedTarget(0.8)) {
+          // Wait for gripper to clear vertically before inspecting placement
+          if (this.motionController.hasReachedTarget(0.15) || this.stateTimerSeconds >= 0.9) {
             this._transitionTo('VERIFY_PLACEMENT');
           }
         }
@@ -532,7 +536,7 @@ export class PickAndPlace {
           if (this.isMultiObjectSequence) {
             const nextIdx = this.currentSequenceIndex + 1;
             if (nextIdx < 6) {
-              this.statusMessage = `VÉRIFIÉ : ${inst.config.name} placé dans le Slot B${this.currentSequenceIndex + 1}. Passage à l\'objet ${nextIdx + 1}/6...`;
+              this.statusMessage = `VÉRIFIÉ : ${inst.config.name} placé dans le Slot B${this.currentSequenceIndex + 1}. Passage à l'objet ${nextIdx + 1}/6...`;
               this._prepareAndStartObjectInSequence(nextIdx);
             } else {
               this.statusMessage = 'TERMINÉ : Les 6 objets ont été transférés avec succès de la Zone A vers la Zone B !';
@@ -541,7 +545,7 @@ export class PickAndPlace {
           } else {
             this._transitionTo('COMPLETE');
           }
-        } else if (this.stateTimerSeconds >= 0.35) {
+        } else if (this.stateTimerSeconds >= 0.65) {
           this._triggerFailure('placement_failed', 'misplaced', report.reason);
         }
         break;

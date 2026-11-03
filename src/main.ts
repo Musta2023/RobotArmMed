@@ -20,6 +20,7 @@ import { JointController } from './control/JointController.js';
 import { MotionController } from './control/MotionController.js';
 import { InstrumentFactory } from './objects/InstrumentFactory.js';
 import { WorkZoneManager } from './objects/WorkZoneManager.js';
+import { ScenarioGenerator } from './objects/ScenarioGenerator.js';
 import { ContactDetector } from './manipulation/ContactDetector.js';
 import { GraspManager } from './manipulation/GraspManager.js';
 import { PlacementVerifier } from './manipulation/PlacementVerifier.js';
@@ -157,7 +158,7 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     domElement: sceneManager.renderer?.domElement ?? null
   });
 
-  // 8. Initialize AI Observation, Action & Episode Dataset Recorder
+  // 8. Initialize AI Observation, Action, Scenario Generator & Episode Dataset Recorder
   const observationBuilder = new ObservationBuilder(
     robotModel,
     instrumentFactory,
@@ -165,6 +166,11 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
   );
   const actionInterface = new ActionInterface(motionController, gripper);
   const episodeRecorder = new EpisodeRecorder();
+  const scenarioGenerator = new ScenarioGenerator({
+    instrumentFactory,
+    workZoneManager,
+    robotModel
+  });
 
   // Simulation playback state
   let isPlaying = true;
@@ -340,7 +346,8 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
       resetAll,
       resetRobotOnly,
       resetObjectsOnly
-    }
+    },
+    scenarioGenerator
   );
 
   const dashboard = new Dashboard({

@@ -233,6 +233,9 @@ export function solveInverseKinematics(
   }
 
   let targetQuat: THREE.Quaternion;
+  const isExplicitOrientation =
+    request.targetQuaternion !== undefined && request.targetQuaternion !== null;
+
   if (request.targetQuaternion instanceof THREE.Quaternion) {
     targetQuat = request.targetQuaternion.clone().normalize();
   } else if (Array.isArray(request.targetQuaternion)) {
@@ -243,11 +246,14 @@ export function solveInverseKinematics(
       request.targetQuaternion[3]
     ).normalize();
   } else {
-    targetQuat = createTopDownQuaternion(0);
+    // When no orientation is explicitly requested, default to radial azimuth top-down
+    // which aligns the gripper with the arm's natural planar reach (J4=0, J6=0)
+    const azimuth = Math.atan2(targetPos.x, targetPos.z);
+    targetQuat = createTopDownQuaternion(azimuth);
   }
 
   const posTol = request.positionToleranceMeters ?? 0.0025;
-  const oriTol = request.orientationToleranceRad ?? 0.035;
+  const oriTol = request.orientationToleranceRad ?? 0.045;
   const maxIter = request.maxIterations ?? 110;
 
   // Geometric reachability check from shoulder pivot (0, 0.26, 0)
@@ -257,11 +263,19 @@ export function solveInverseKinematics(
   const isGeometricallyReachable =
     distFromShoulder <= maxReach + 0.02 && targetPos.y >= -0.02;
 
-  const candidateSeeds = [
+  const candidateSeeds: number[][] = [
     currentAngles,
-    ...generateAnalyticalSeeds(targetPos, targetQuat, config),
-    homePose
+    ...generateAnalyticalSeeds(targetPos, targetQuat, config)
   ];
+
+  if (!isExplicitOrientation) {
+    const azimuth = Math.atan2(targetPos.x, targetPos.z);
+    candidateSeeds.push(
+      ...generateAnalyticalSeeds(targetPos, createTopDownQuaternion(0), config),
+      ...generateAnalyticalSeeds(targetPos, createTopDownQuaternion(azimuth + Math.PI / 2), config)
+    );
+  }
+  candidateSeeds.push(homePose);
 
   let bestSolution = currentAngles;
   let bestPosErr = Infinity;

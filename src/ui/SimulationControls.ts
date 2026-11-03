@@ -8,6 +8,8 @@
 import { PickAndPlace, PickAndPlaceState } from '../manipulation/PickAndPlace.js';
 import { EpisodeRecorder } from '../ai/EpisodeRecorder.js';
 import { RobotModel } from '../robot/RobotModel.js';
+import { ScenarioGenerator, ScenarioDifficultyLevel } from '../objects/ScenarioGenerator.js';
+import { DataQualityValidator } from '../ai/DataQualityValidator.js';
 
 export interface SimulationTransportCallbacks {
   isPlaying: () => boolean;
@@ -49,6 +51,8 @@ export class SimulationControls {
   public episodeRecorder: EpisodeRecorder;
   public robotModel: RobotModel;
   public callbacks: SimulationTransportCallbacks;
+  public scenarioGenerator?: ScenarioGenerator;
+  public dataQualityValidator: DataQualityValidator = new DataQualityValidator();
 
   private stateChipRefs: Map<PickAndPlaceState, HTMLElement> = new Map();
 
@@ -57,13 +61,15 @@ export class SimulationControls {
     pickAndPlace: PickAndPlace,
     episodeRecorder: EpisodeRecorder,
     robotModel: RobotModel,
-    callbacks: SimulationTransportCallbacks
+    callbacks: SimulationTransportCallbacks,
+    scenarioGenerator?: ScenarioGenerator
   ) {
     this.container = container;
     this.pickAndPlace = pickAndPlace;
     this.episodeRecorder = episodeRecorder;
     this.robotModel = robotModel;
     this.callbacks = callbacks;
+    this.scenarioGenerator = scenarioGenerator;
 
     if (this.container) {
       this._render();
@@ -244,25 +250,27 @@ export class SimulationControls {
       this.refresh();
     });
 
-    // 3. Enregistreur de Données pour IA & Apprentissage par Imitation
+    // 3. Enregistreur de Données pour IA (Behavior Cloning & Diffusion Policy)
     const aiSec = document.createElement('section');
     aiSec.className = 'panel-section';
     aiSec.innerHTML = `
       <div class="section-header">
-        <h2>Enregistreur IA</h2>
+        <h2>Enregistreur IA (20 Hz)</h2>
         <span class="badge badge-info" id="ai-rec-badge">EN ATTENTE</span>
       </div>
       <div class="telemetry-kv-grid">
-        <div><span>Épisode</span><strong id="ai-ep-id">ep_001</strong></div>
-        <div><span>Échantillons</span><strong id="ai-step-count">0</strong></div>
+        <div><span>Épisode en cours</span><strong id="ai-ep-id">ep_001</strong></div>
+        <div><span>Épisodes archivés</span><strong id="ai-archived-count">0</strong></div>
+        <div><span>Échantillons (20 Hz)</span><strong id="ai-step-count">0</strong></div>
+        <div><span>Conformité Dataset</span><strong id="ai-quality-score">100%</strong></div>
       </div>
       <div class="button-grid-2" style="margin-top: 4px;">
         <button type="button" class="btn btn-secondary" id="btn-ai-toggle-rec">Démarrer Enregistrement</button>
         <button type="button" class="btn btn-warning" id="btn-ai-mark-failed">Arrêter (Échec)</button>
       </div>
       <div class="button-grid-2" style="margin-top: 4px;">
-        <button type="button" class="btn btn-accent" id="btn-ai-export-json">Export JSON</button>
-        <button type="button" class="btn btn-secondary" id="btn-ai-export-csv">Export CSV</button>
+        <button type="button" class="btn btn-accent" id="btn-ai-export-json">Export Dataset JSON</button>
+        <button type="button" class="btn btn-secondary" id="btn-ai-export-csv">Export CSV Consolidé</button>
       </div>
     `;
 
@@ -270,7 +278,10 @@ export class SimulationControls {
       if (this.episodeRecorder.isRecording) {
         this.episodeRecorder.stopRecording('success');
       } else {
-        this.episodeRecorder.startRecording('surgical_demo');
+        this.episodeRecorder.startRecording(
+          `surgical_ep_${String(this.episodeRecorder.episodeCounter).padStart(3, '0')}`,
+          this.scenarioGenerator?.currentScenario ?? undefined
+        );
       }
       this.refresh();
     });
@@ -314,9 +325,63 @@ export class SimulationControls {
       this.refresh();
     });
 
+    // 4. Générateur de Scénarios ML Déterministe
+    const scenSec = document.createElement('section');
+    scenSec.className = 'panel-section';
+    scenSec.innerHTML = `
+      <div class="section-header">
+        <h2>Générateur de Scénarios ML</h2>
+        <span class="badge badge-info" id="scen-active-id">DÉFAUT</span>
+      </div>
+      <div style="margin-bottom: 6px;">
+        <label style="font-size: 11px; opacity: 0.8; display: block; margin-bottom: 2px;">Niveau de Difficulté :</label>
+        <select id="scen-level-select" style="width: 100%; background: #1a1e24; color: #fff; border: 1px solid #333d4b; padding: 4px; border-radius: 4px; font-size: 11px;">
+          <option value="1">Niveau 1 : 1 objet - Position fixe canonique</option>
+          <option value="2" selected>Niveau 2 : 1 objet - Position & lacet aléatoires</option>
+          <option value="3">Niveau 3 : 1 objet - Limites espace de travail</option>
+          <option value="4">Niveau 4 : 6 objets - Grille multi-objets</option>
+          <option value="5">Niveau 5 : Perturbé - Randomisation physique</option>
+        </select>
+      </div>
+      <div class="button-grid-2">
+        <button type="button" class="btn btn-secondary" id="btn-scen-generate">Nouveau Scénario</button>
+        <button type="button" class="btn btn-primary" id="btn-scen-apply-start">Appliquer & Démarrer</button>
+      </div>
+    `;
+
+    scenSec.querySelector('#btn-scen-generate')?.addEventListener('click', () => {
+      const select = scenSec.querySelector('#scen-level-select') as HTMLSelectElement | null;
+      const level = (parseInt(select?.value ?? '2', 10) || 2) as ScenarioDifficultyLevel;
+      if (this.scenarioGenerator) {
+        const scen = this.scenarioGenerator.generateScenario(level, Date.now());
+        this.scenarioGenerator.applyScenario(scen);
+        const scenBadge = scenSec.querySelector('#scen-active-id');
+        if (scenBadge) scenBadge.textContent = `LVL ${level}`;
+      }
+      this.pickAndPlace.reset();
+      this.refresh();
+    });
+
+    scenSec.querySelector('#btn-scen-apply-start')?.addEventListener('click', () => {
+      const select = scenSec.querySelector('#scen-level-select') as HTMLSelectElement | null;
+      const level = (parseInt(select?.value ?? '2', 10) || 2) as ScenarioDifficultyLevel;
+      if (this.scenarioGenerator) {
+        const scen = this.scenarioGenerator.generateScenario(level, Date.now());
+        this.scenarioGenerator.applyScenario(scen);
+      }
+      this.callbacks.setPlaying(true);
+      if (level === 4) {
+        this.pickAndPlace.startMultiObjectSequence();
+      } else {
+        this.pickAndPlace.start();
+      }
+      this.refresh();
+    });
+
     this.container.appendChild(simSec);
     this.container.appendChild(taskSec);
     this.container.appendChild(aiSec);
+    this.container.appendChild(scenSec);
   }
 
   public refresh(): void {
@@ -389,7 +454,9 @@ export class SimulationControls {
 
     const recBadge = this.container.querySelector('#ai-rec-badge');
     const epIdEl = this.container.querySelector('#ai-ep-id');
+    const archivedEl = this.container.querySelector('#ai-archived-count');
     const stepCountEl = this.container.querySelector('#ai-step-count');
+    const qualityScoreEl = this.container.querySelector('#ai-quality-score');
     const recBtn = this.container.querySelector('#btn-ai-toggle-rec');
 
     if (recBadge) {
@@ -399,8 +466,20 @@ export class SimulationControls {
     if (epIdEl) {
       epIdEl.textContent = this.episodeRecorder.episodeId;
     }
+    if (archivedEl) {
+      archivedEl.textContent = `${this.episodeRecorder.completedEpisodes.length} épisodes`;
+    }
     if (stepCountEl) {
-      stepCountEl.textContent = `${this.episodeRecorder.frames.length} échantillons`;
+      stepCountEl.textContent = `${this.episodeRecorder.totalRecordedSamples} (20 Hz)`;
+    }
+    if (qualityScoreEl) {
+      const epCount = this.episodeRecorder.completedEpisodes.length;
+      if (epCount > 0) {
+        const rep = this.dataQualityValidator.generateDatasetQualityReport(this.episodeRecorder.completedEpisodes);
+        qualityScoreEl.textContent = `${rep.compliance_rate_percent}% (${rep.compliant_episodes_count}/${epCount})`;
+      } else {
+        qualityScoreEl.textContent = '100% (Prêt)';
+      }
     }
     if (recBtn) {
       recBtn.textContent = this.episodeRecorder.isRecording ? 'Arrêter Enregistrement' : 'Démarrer Enregistrement';
