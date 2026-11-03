@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "share": "vite --host",
+    "tunnel": "npx untun 5173",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",

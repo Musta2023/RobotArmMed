@@ -295,7 +295,10 @@ export class SimulationControls {
       if (this.episodeRecorder.isRecording) {
         this.episodeRecorder.stopRecording();
       }
-      const jsonStr = this.episodeRecorder.exportJSON();
+      const jsonStr =
+        this.episodeRecorder.completedEpisodes.length > 1
+          ? this.episodeRecorder.exportConsolidatedJSON()
+          : this.episodeRecorder.exportJSON();
       if (typeof Blob !== 'undefined' && typeof URL !== 'undefined') {
         const blob = new Blob([jsonStr], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -312,7 +315,10 @@ export class SimulationControls {
       if (this.episodeRecorder.isRecording) {
         this.episodeRecorder.stopRecording();
       }
-      const csvStr = this.episodeRecorder.exportCSV();
+      const csvStr =
+        this.episodeRecorder.completedEpisodes.length > 1
+          ? this.episodeRecorder.exportConsolidatedCSV()
+          : this.episodeRecorder.exportCSV();
       if (typeof Blob !== 'undefined' && typeof URL !== 'undefined') {
         const blob = new Blob([csvStr], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);

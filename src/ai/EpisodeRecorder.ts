@@ -134,6 +134,7 @@ export class EpisodeRecorder {
   public prohibitedCollisionEventsCount: number = 0;
 
   public validator: EpisodeValidator = new EpisodeValidator();
+  private _lastRecordedTaskState: PickAndPlaceState | null = null;
 
   constructor() {
     this.completedEpisodes = [];
@@ -241,6 +242,14 @@ export class EpisodeRecorder {
   }): EpisodeStepFrame | null {
     if (!this.isRecording) return null;
 
+    // Guard against recording post-completion idle ticks
+    if (
+      (params.taskState === 'COMPLETE' || params.taskState === 'FAILED') &&
+      this._lastRecordedTaskState === params.taskState
+    ) {
+      return null;
+    }
+
     // Check prohibited collisions
     if (params.contacts.some((c) => c.isProhibitedCollision)) {
       this.prohibitedCollisionEventsCount++;
@@ -319,9 +328,16 @@ export class EpisodeRecorder {
 
     this.currentEpisodeFrames.push(frame);
 
-    // Auto-finalize episode if task ended
-    if (taskState === 'COMPLETE' || taskState === 'FAILED') {
+    // Auto-finalize episode only on edge transition into COMPLETE or FAILED
+    if (
+      (taskState === 'COMPLETE' || taskState === 'FAILED') &&
+      this._lastRecordedTaskState !== taskState &&
+      this.currentEpisodeFrames.length >= 2
+    ) {
+      this._lastRecordedTaskState = taskState;
       this.finalizeActiveEpisode();
+    } else if (taskState !== 'COMPLETE' && taskState !== 'FAILED') {
+      this._lastRecordedTaskState = taskState;
     }
 
     return frame;
@@ -329,14 +345,32 @@ export class EpisodeRecorder {
 
   // Alias for backward compatibility with existing tests
   public exportDataset(): RecordedEpisodeDataset {
-    if (this.completedEpisodes.length > 0 && this.currentEpisodeFrames.length === 0) {
+    // If active buffer has a real trajectory, export it
+    if (this.currentEpisodeFrames.length > 1) {
+      const report = this.validator.evaluateEpisode(
+        this.episodeId,
+        this.currentEpisodeFrames.map((f) => f.observation),
+        this.prohibitedCollisionEventsCount
+      );
+      return this._buildEpisodeDataset(report);
+    }
+    // Otherwise fallback to the last completed real episode
+    const realEpisodes = this.completedEpisodes.filter((e) => e.total_steps > 1);
+    if (realEpisodes.length > 0) {
+      return realEpisodes[realEpisodes.length - 1];
+    }
+    if (this.completedEpisodes.length > 0) {
       return this.completedEpisodes[this.completedEpisodes.length - 1];
     }
-    const report = this.validator.evaluateEpisode(
-      this.episodeId,
-      this.currentEpisodeFrames.map((f) => f.observation),
-      this.prohibitedCollisionEventsCount
-    );
+    if (this.currentEpisodeFrames.length > 0) {
+      const report = this.validator.evaluateEpisode(
+        this.episodeId,
+        this.currentEpisodeFrames.map((f) => f.observation),
+        this.prohibitedCollisionEventsCount
+      );
+      return this._buildEpisodeDataset(report);
+    }
+    const report = this.validator.evaluateEpisode(this.episodeId, [], 0);
     return this._buildEpisodeDataset(report);
   }
 
@@ -421,10 +455,10 @@ export class EpisodeRecorder {
    * Returns a consolidated bundle of all recorded episodes in the current session.
    */
   public exportConsolidatedBundle(): ConsolidatedDatasetBundle {
-    const all = [...this.completedEpisodes];
+    const all = [...this.completedEpisodes.filter((e) => e.total_steps > 1)];
     if (
-      this.currentEpisodeFrames.length > 0 &&
-      !this.completedEpisodes.some((e) => e.episode_id === this.episodeId)
+      this.currentEpisodeFrames.length > 1 &&
+      !all.some((e) => e.episode_id === this.episodeId)
     ) {
       all.push(this.exportDataset());
     }

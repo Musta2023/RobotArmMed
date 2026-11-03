@@ -256,8 +256,6 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
             }
           : undefined
       });
-      // Continuous multi-scenario recording: do not auto-stop on COMPLETE.
-      // Persists across all pick-and-place cycles until user explicitly stops recording.
     }
   };
 
