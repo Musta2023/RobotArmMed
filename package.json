@@ -10,10 +10,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "collect:failures": "vite-node scripts/collectFailureDataset.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
+    "onnxruntime-web": "^1.21.0",
     "three": "^0.169.0",
     "three-mesh-bvh": "^0.7.8"
   },

@@ -21,9 +21,14 @@ import { MotionController } from '../control/MotionController.js';
 import { Gripper } from '../robot/Gripper.js';
 import { GraspManager } from './GraspManager.js';
 import { PlacementVerifier, PlacementVerificationReport } from './PlacementVerifier.js';
-import { InstrumentFactory } from '../objects/InstrumentFactory.js';
+import { InstrumentFactory, ActiveSurgicalInstrument } from '../objects/InstrumentFactory.js';
 import { TARGET_TRAY_POS, SIX_OBJECT_DEFINITIONS } from '../objects/ObjectProperties.js';
 import { WorkZoneManager } from '../objects/WorkZoneManager.js';
+import { createTopDownQuaternion } from '../control/InverseKinematics.js';
+import {
+  FailureScenarioController,
+  FailureScenarioType
+} from './FailureScenarioController.js';
 import {
   FailureDetector,
   OrchestratorFailurePayload
@@ -77,6 +82,7 @@ export class PickAndPlace {
   public lastOrchestratorResult: OrchestratorFailurePayload | null = null;
   public statusMessage: string = 'Ready at Home Pose.';
   public injectFailureNextGrasp: boolean = false;
+  public failureController: FailureScenarioController;
 
   constructor(params: {
     motionController: MotionController;
@@ -87,6 +93,7 @@ export class PickAndPlace {
     failureDetector: FailureDetector;
     recoveryManager: RecoveryManager;
     workZoneManager?: WorkZoneManager;
+    failureController?: FailureScenarioController;
   }) {
     this.motionController = params.motionController;
     this.gripper = params.gripper;
@@ -96,6 +103,14 @@ export class PickAndPlace {
     this.failureDetector = params.failureDetector;
     this.recoveryManager = params.recoveryManager;
     this.workZoneManager = params.workZoneManager;
+    this.failureController =
+      params.failureController ??
+      new FailureScenarioController({
+        gripper: this.gripper,
+        motionController: this.motionController,
+        failureDetector: this.failureDetector,
+        instrumentFactory: this.instrumentFactory
+      });
   }
 
   private _transitionTo(nextState: PickAndPlaceState): void {
@@ -215,6 +230,39 @@ export class PickAndPlace {
     return true;
   }
 
+  /**
+   * Computes the optimal top-down grasp quaternion aligned with the object's principal faces,
+   * choosing the 90-degree box symmetry branch that minimizes deviation from the arm's radial reach.
+   */
+  public computeOptimalGraspQuaternion(inst: ActiveSurgicalInstrument): THREE.Quaternion {
+    const bodyPos = inst.managedBody.body.translation();
+    const bodyRot = inst.managedBody.body.rotation();
+    const azimuth = Math.atan2(bodyPos.x, bodyPos.z);
+
+    const objQuat = new THREE.Quaternion(bodyRot.x, bodyRot.y, bodyRot.z, bodyRot.w);
+    const objEuler = new THREE.Euler().setFromQuaternion(objQuat, 'YXZ');
+    const objYaw = objEuler.y;
+
+    if (inst.config.shape === 'box') {
+      // Box has 4-fold 90-degree symmetry. Align jaws with the flat face closest to radial azimuth
+      let bestYaw = objYaw;
+      let minDiff = Infinity;
+      for (const k of [0, 1, 2, 3]) {
+        const candidateYaw = objYaw + (k * Math.PI) / 2;
+        let diff = (candidateYaw - azimuth) % (2 * Math.PI);
+        if (diff > Math.PI) diff -= 2 * Math.PI;
+        if (diff < -Math.PI) diff += 2 * Math.PI;
+        if (Math.abs(diff) < minDiff) {
+          minDiff = Math.abs(diff);
+          bestYaw = candidateYaw;
+        }
+      }
+      return createTopDownQuaternion(bestYaw);
+    } else {
+      return createTopDownQuaternion(azimuth);
+    }
+  }
+
   private _triggerFailure(
     errorCode: Parameters<FailureDetector['recordFailure']>[0],
     objectState: Parameters<FailureDetector['recordFailure']>[1],
@@ -240,6 +288,19 @@ export class PickAndPlace {
    */
   public injectIntentionalGraspFailure(enabled: boolean): void {
     this.injectFailureNextGrasp = enabled;
+    if (enabled) {
+      this.failureController.armScenario('MISSED_APPROACH');
+    } else {
+      this.failureController.disarm();
+    }
+  }
+
+  /**
+   * Arms a specific failure scenario on the failure controller for the next grasp.
+   */
+  public armFailureScenario(mode: FailureScenarioType): void {
+    this.injectFailureNextGrasp = mode !== 'NONE';
+    this.failureController.armScenario(mode);
   }
 
   /**
@@ -247,6 +308,7 @@ export class PickAndPlace {
    */
   public authorizeAndRecover(): boolean {
     this.injectFailureNextGrasp = false;
+    this.failureController.disarm();
     const isMulti = this.isMultiObjectSequence;
     const curIdx = this.currentSequenceIndex;
 
@@ -298,12 +360,18 @@ export class PickAndPlace {
         this.statusMessage = 'APPROCHE : Alignement du préhenseur au-dessus de l\'instrument...';
         this.gripper.open(false);
         // Subphase 0: move above instrument (with intentional offset if failure test requested)
-        const offsetX = this.injectFailureNextGrasp ? 0.095 : 0.0;
-        const ikRes = this.motionController.commandCartesianPose([
-          bodyPos.x + offsetX,
+        const graspQuat = this.failureController.getModifiedGraspOrientation(
+          this.computeOptimalGraspQuaternion(inst)
+        );
+        const approachPos = this.failureController.getModifiedApproachTarget([
+          bodyPos.x,
           safeHoverY,
           bodyPos.z
         ]);
+        const ikRes = this.motionController.commandCartesianPose(
+          approachPos,
+          graspQuat
+        );
         if (!ikRes.success) {
           this._triggerFailure('grasp_failed', 'not_secured', ikRes.message);
         }
@@ -312,6 +380,7 @@ export class PickAndPlace {
 
       case 'GRASP': {
         this.statusMessage = 'PRISE : Fermeture des mors motorisés de la pince...';
+        this.failureController.onGraspEnter();
         this.gripper.close(false);
         break;
       }
@@ -324,11 +393,13 @@ export class PickAndPlace {
 
       case 'LIFT': {
         this.statusMessage = 'LEVAGE : Élévation de l\'instrument à la hauteur de sécurité...';
-        const ikLift = this.motionController.commandCartesianPose([
-          bodyPos.x,
-          safeHoverY,
-          bodyPos.z
-        ]);
+        const graspQuat = this.failureController.getModifiedGraspOrientation(
+          this.computeOptimalGraspQuaternion(inst)
+        );
+        const ikLift = this.motionController.commandCartesianPose(
+          [bodyPos.x, safeHoverY, bodyPos.z],
+          graspQuat
+        );
         if (!ikLift.success) {
           this._triggerFailure('unstable_manipulation', 'secured', ikLift.message);
         }
@@ -337,9 +408,10 @@ export class PickAndPlace {
 
       case 'TRANSPORT': {
         this.statusMessage = 'TRANSPORT : Transfert de l\'instrument vers la Zone Cible B...';
+        const transAlt = this.failureController.getModifiedTransportAltitude(safeHoverY);
         const ikTrans = this.motionController.commandCartesianPose([
           this.targetPosition[0],
-          safeHoverY,
+          transAlt,
           this.targetPosition[2]
         ]);
         if (!ikTrans.success) {
@@ -350,13 +422,19 @@ export class PickAndPlace {
 
       case 'PLACE': {
         this.statusMessage = 'DÉPOSE : Descente de l\'instrument sur le plateau cible et relâchement...';
-        const placeY =
+        const nominalPlaceY =
           this.targetPosition[1] + inst.config.dimensions.height / 2 + 0.002;
-        const ikPlace = this.motionController.commandCartesianPose([
-          this.targetPosition[0],
-          placeY,
-          this.targetPosition[2]
-        ]);
+        const graspQuat = this.failureController.getModifiedGraspOrientation(
+          this.computeOptimalGraspQuaternion(inst)
+        );
+        const placeConfig = this.failureController.getModifiedPlacementPose(
+          [this.targetPosition[0], nominalPlaceY, this.targetPosition[2]],
+          graspQuat
+        );
+        const ikPlace = this.motionController.commandCartesianPose(
+          placeConfig.targetPosition,
+          placeConfig.targetOrientation
+        );
         if (!ikPlace.success) {
           this._triggerFailure('placement_failed', 'secured', ikPlace.message);
         }
@@ -425,12 +503,18 @@ export class PickAndPlace {
         if (this.subPhase === 0) {
           if (this.motionController.hasReachedTarget(0.6)) {
             this.subPhase = 1;
-            const offsetX = this.injectFailureNextGrasp ? 0.095 : 0.0;
-            const descendIk = this.motionController.commandCartesianPose([
-              bodyPos.x + offsetX,
+            const graspQuat = this.failureController.getModifiedGraspOrientation(
+          this.computeOptimalGraspQuaternion(inst)
+        );
+            const descendTarget = this.failureController.getModifiedApproachTarget([
+              bodyPos.x,
               Math.max(bodyPos.y, 0.035),
               bodyPos.z
             ]);
+            const descendIk = this.motionController.commandCartesianPose(
+              descendTarget,
+              graspQuat
+            );
             if (!descendIk.success) {
               this._triggerFailure('grasp_failed', 'not_secured', descendIk.message);
             }
@@ -481,6 +565,10 @@ export class PickAndPlace {
       }
 
       case 'TRANSPORT': {
+        this.failureController.onTransportStep(
+          dt,
+          this.gripper.getGraspFrameWorldPose().position.y
+        );
         if (!this.graspManager.isGrasping) {
           this._triggerFailure(
             'object_falling',
@@ -501,8 +589,13 @@ export class PickAndPlace {
           if (this.motionController.hasReachedTarget(0.08) || this.stateTimerSeconds >= 1.2) {
             this.subPhase = 1;
             this.stateTimerSeconds = 0;
-            this.graspManager.releaseGrasp();
-            this.gripper.open(false);
+            if (this.failureController.shouldPreventFullRelease()) {
+              // Jammed release: gripper stays partially closed and retains attachment
+              this.gripper.targetOpeningMeters = 0.015;
+            } else {
+              this.graspManager.releaseGrasp();
+              this.gripper.open(false);
+            }
           }
         } else if (this.subPhase === 1) {
           // Allow 0.35s for fingers to open fully and object to settle flat under gravity
@@ -560,6 +653,8 @@ export class PickAndPlace {
    * Resets the Pick and Place state machine to IDLE.
    */
   public reset(): void {
+    this.failureController.disarm();
+    this.injectFailureNextGrasp = false;
     this.state = 'IDLE';
     this.stateHistory = ['IDLE'];
     this.subPhase = 0;

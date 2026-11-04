@@ -122,7 +122,7 @@ export class ObservationBuilder {
     targetOrientation: [number, number, number, number] = [0, 0, 0, 1]
   ): DigitalTwinObservation {
     const snap = this.robotModel.state.latestSnapshot;
-    const activeInst = this.instrumentFactory.getActiveInstrument();
+    const activeInst = this.instrumentFactory.getActiveInstrument() ?? this.instrumentFactory.instruments?.values()?.next()?.value;
 
     // 1. Multi-object ground truth inspection
     const groundTruthObjects: ObjectGroundTruthState[] = [];
@@ -163,6 +163,14 @@ export class ObservationBuilder {
         primaryObjAngVel = [av.x, av.y, av.z];
       }
     });
+
+    // Fallback de sécurité si aucun objet actif n'était marqué
+    if (primaryObjPos[0] === 0 && primaryObjPos[1] === 0 && primaryObjPos[2] === 0 && groundTruthObjects.length > 0) {
+      primaryObjPos = [...groundTruthObjects[0].position];
+      primaryObjQuat = [...groundTruthObjects[0].orientation];
+      primaryObjLinVel = [...groundTruthObjects[0].linear_velocity];
+      primaryObjAngVel = [...groundTruthObjects[0].angular_velocity];
+    }
 
     // 2. Camera pose
     const camWorldPos = this.robotModel.wristCamera.getWorldPosition(

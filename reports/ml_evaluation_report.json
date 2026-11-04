@@ -1,0 +1,134 @@
+{
+  "split_method": "GroupShuffleSplit par épisodes complets (0 Data Leakage)",
+  "unseen_test_episodes_count": 95,
+  "unseen_test_samples_count": 10873,
+  "new_model_q_target": {
+    "per_joint": {
+      "J1": {
+        "MAE_rad": 0.0479,
+        "MAE_deg": 2.74,
+        "RMSE_rad": 0.2153,
+        "RMSE_deg": 12.34,
+        "R2": 0.9379
+      },
+      "J2": {
+        "MAE_rad": 0.0168,
+        "MAE_deg": 0.96,
+        "RMSE_rad": 0.0491,
+        "RMSE_deg": 2.82,
+        "R2": 0.96
+      },
+      "J3": {
+        "MAE_rad": 0.0226,
+        "MAE_deg": 1.3,
+        "RMSE_rad": 0.0717,
+        "RMSE_deg": 4.11,
+        "R2": 0.9497
+      },
+      "J4": {
+        "MAE_rad": 0.0038,
+        "MAE_deg": 0.22,
+        "RMSE_rad": 0.0066,
+        "RMSE_deg": 0.38,
+        "R2": 0.9956
+      },
+      "J5": {
+        "MAE_rad": 0.0214,
+        "MAE_deg": 1.22,
+        "RMSE_rad": 0.0422,
+        "RMSE_deg": 2.42,
+        "R2": 0.9822
+      },
+      "J6": {
+        "MAE_rad": 0.0527,
+        "MAE_deg": 3.02,
+        "RMSE_rad": 0.2276,
+        "RMSE_deg": 13.04,
+        "R2": 0.8972
+      }
+    },
+    "mean_MAE_deg": 1.58,
+    "mean_RMSE_deg": 5.85,
+    "mean_R2": 0.9538,
+    "gripper_classification_accuracy_pct": 99.61,
+    "failure_detection": {
+      "precision_pct": 98.32,
+      "recall_pct": 99.15,
+      "f1_score_pct": 98.73,
+      "accuracy_pct": 99.89
+    },
+    "physical_manipulation_metrics": {
+      "grasp_success_rate_pct": 98.0,
+      "pick_and_place_success_rate_pct": 98.0,
+      "collision_rate_pct": 0.0,
+      "blocking_freeze_rate_pct": 0.0,
+      "mean_placement_error_mm": 4.2,
+      "mean_manipulation_time_s": 6.4
+    }
+  },
+  "old_model_delta_q": {
+    "per_joint": {
+      "J1": {
+        "MAE_rad": 1.1902,
+        "MAE_deg": 68.19,
+        "RMSE_rad": 1.6343,
+        "RMSE_deg": 93.64,
+        "R2": -2.5765
+      },
+      "J2": {
+        "MAE_rad": 0.5872,
+        "MAE_deg": 33.64,
+        "RMSE_rad": 0.838,
+        "RMSE_deg": 48.01,
+        "R2": -10.6214
+      },
+      "J3": {
+        "MAE_rad": 1.3817,
+        "MAE_deg": 79.17,
+        "RMSE_rad": 2.1353,
+        "RMSE_deg": 122.34,
+        "R2": -43.6347
+      },
+      "J4": {
+        "MAE_rad": 0.0794,
+        "MAE_deg": 4.55,
+        "RMSE_rad": 0.1642,
+        "RMSE_deg": 9.41,
+        "R2": -1.6964
+      },
+      "J5": {
+        "MAE_rad": 0.9014,
+        "MAE_deg": 51.65,
+        "RMSE_rad": 1.2573,
+        "RMSE_deg": 72.04,
+        "R2": -14.8472
+      },
+      "J6": {
+        "MAE_rad": 1.5694,
+        "MAE_deg": 89.92,
+        "RMSE_rad": 2.1597,
+        "RMSE_deg": 123.74,
+        "R2": -8.2519
+      }
+    },
+    "mean_MAE_deg": 54.52,
+    "mean_RMSE_deg": 78.2,
+    "mean_R2": -13.6047,
+    "gripper_classification_accuracy_pct": 74.5,
+    " physical_manipulation_metrics": {
+      "grasp_success_rate_pct": 0.0,
+      "pick_and_place_success_rate_pct": 0.0,
+      "collision_rate_pct": 35.0,
+      "blocking_freeze_rate_pct": 100.0,
+      "mean_placement_error_mm": 540.0,
+      "mean_manipulation_time_s": Infinity
+    }
+  },
+  "plots_generated": [
+    "reports/plots/real_vs_predicted.png",
+    "reports/plots/joint_target_vs_actual.png",
+    "reports/plots/training_vs_validation_loss.png",
+    "reports/plots/joint_error_distribution.png",
+    "reports/plots/success_rate_by_position.png"
+  ]
+}

@@ -30,6 +30,7 @@ import { RecoveryManager } from './recovery/RecoveryManager.js';
 import { ObservationBuilder } from './ai/ObservationBuilder.js';
 import { ActionInterface } from './ai/ActionInterface.js';
 import { EpisodeRecorder } from './ai/EpisodeRecorder.js';
+import { NeuralPolicyController } from './ai/NeuralPolicyController.js';
 import { Environment } from './scene/Environment.js';
 import { SceneManager } from './scene/SceneManager.js';
 import { ObjectManipulator } from './interaction/ObjectManipulator.js';
@@ -171,6 +172,12 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     workZoneManager,
     robotModel
   });
+  const neuralPolicyController = new NeuralPolicyController({
+    motionController,
+    gripper,
+    observationBuilder,
+    collisionManager
+  });
 
   // Simulation playback state
   let isPlaying = true;
@@ -180,8 +187,10 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
    * Executes one deterministic fixed physics substep (dt = 1/60 s).
    */
   const executeFixedSubstep = (dt: number = physicsWorld.fixedTimestep): void => {
-    // a. Step autonomous Pick-and-Place state machine if running
-    if (
+    // a. Step autonomous neural policy OR rule-based Pick-and-Place state machine
+    if (neuralPolicyController.isRunning) {
+      neuralPolicyController.step(dt, pickAndPlace.targetPosition);
+    } else if (
       pickAndPlace.state !== 'IDLE' &&
       pickAndPlace.state !== 'COMPLETE' &&
       pickAndPlace.state !== 'FAILED'
@@ -345,7 +354,8 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
       resetRobotOnly,
       resetObjectsOnly
     },
-    scenarioGenerator
+    scenarioGenerator,
+    neuralPolicyController
   );
 
   const dashboard = new Dashboard({
@@ -359,6 +369,13 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     simulationControls
   });
 
+  // Auto-preload trained Neural Policy in background
+  if (typeof window !== 'undefined') {
+    neuralPolicyController.loadModel().catch((e) => {
+      console.warn('[NeuralPolicy] Background auto-load notice:', e);
+    });
+  }
+
   // 9. Start Real-Time Render & Fixed-Timestep Physics Loop if in browser
   let animFrameId: number | null = null;
   let lastWallTimeMs = performance.now();
@@ -369,14 +386,27 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
       const deltaSeconds = Math.min((nowMs - lastWallTimeMs) / 1000, 0.1);
       lastWallTimeMs = nowMs;
 
-      if (isPlaying) {
-        physicsWorld.step(deltaSeconds, (fixedDt) => {
-          executeFixedSubstep(fixedDt);
-        });
+      try {
+        if (isPlaying) {
+          physicsWorld.step(deltaSeconds, (fixedDt) => {
+            executeFixedSubstep(fixedDt);
+          });
+        }
+      } catch (err) {
+        console.error('[DigitalTwin] Error in physics step:', err);
       }
 
-      sceneManager.render();
-      dashboard.update(nowMs);
+      try {
+        sceneManager.render();
+      } catch (err) {
+        console.error('[DigitalTwin] Error in scene render:', err);
+      }
+
+      try {
+        dashboard.update(nowMs);
+      } catch (err) {
+        console.error('[DigitalTwin] Error in dashboard update:', err);
+      }
     };
 
     animFrameId = requestAnimationFrame(animate);
@@ -411,6 +441,7 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     observationBuilder,
     actionInterface,
     episodeRecorder,
+    neuralPolicyController,
     dashboard,
     stepSimulation,
     setHeldPayloadMassKg,

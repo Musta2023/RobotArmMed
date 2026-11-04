@@ -10,6 +10,11 @@ import { EpisodeRecorder } from '../ai/EpisodeRecorder.js';
 import { RobotModel } from '../robot/RobotModel.js';
 import { ScenarioGenerator, ScenarioDifficultyLevel } from '../objects/ScenarioGenerator.js';
 import { DataQualityValidator } from '../ai/DataQualityValidator.js';
+import { NeuralPolicyController } from '../ai/NeuralPolicyController.js';
+import {
+  FailureScenarioType,
+  FAILURE_SCENARIO_DEFINITIONS
+} from '../manipulation/FailureScenarioController.js';
 
 export interface SimulationTransportCallbacks {
   isPlaying: () => boolean;
@@ -52,6 +57,7 @@ export class SimulationControls {
   public robotModel: RobotModel;
   public callbacks: SimulationTransportCallbacks;
   public scenarioGenerator?: ScenarioGenerator;
+  public neuralPolicyController?: NeuralPolicyController;
   public dataQualityValidator: DataQualityValidator = new DataQualityValidator();
 
   private stateChipRefs: Map<PickAndPlaceState, HTMLElement> = new Map();
@@ -62,7 +68,8 @@ export class SimulationControls {
     episodeRecorder: EpisodeRecorder,
     robotModel: RobotModel,
     callbacks: SimulationTransportCallbacks,
-    scenarioGenerator?: ScenarioGenerator
+    scenarioGenerator?: ScenarioGenerator,
+    neuralPolicyController?: NeuralPolicyController
   ) {
     this.container = container;
     this.pickAndPlace = pickAndPlace;
@@ -70,6 +77,7 @@ export class SimulationControls {
     this.robotModel = robotModel;
     this.callbacks = callbacks;
     this.scenarioGenerator = scenarioGenerator;
+    this.neuralPolicyController = neuralPolicyController;
 
     if (this.container) {
       this._render();
@@ -272,7 +280,15 @@ export class SimulationControls {
         <button type="button" class="btn btn-accent" id="btn-ai-export-json">Export Dataset JSON</button>
         <button type="button" class="btn btn-secondary" id="btn-ai-export-csv">Export CSV Consolidé</button>
       </div>
+      <div style="margin-top: 4px;">
+        <button type="button" class="btn btn-secondary" id="btn-ai-clear" style="width: 100%; opacity: 0.85; font-size: 11px;">Réinitialiser Données & Compteurs</button>
+      </div>
     `;
+
+    aiSec.querySelector('#btn-ai-clear')?.addEventListener('click', () => {
+      this.episodeRecorder.clear();
+      this.refresh();
+    });
 
     aiSec.querySelector('#btn-ai-toggle-rec')?.addEventListener('click', () => {
       if (this.episodeRecorder.isRecording) {
@@ -384,10 +400,137 @@ export class SimulationControls {
       this.refresh();
     });
 
+    // 5. Simulateur d'Échecs ML (Failure Dataset)
+    const failSec = document.createElement('section');
+    failSec.className = 'panel-section';
+    failSec.innerHTML = `
+      <div class="section-header">
+        <h2>Simulateur d'Échecs ML (Dataset)</h2>
+        <span class="badge badge-info" id="fail-active-badge">NOMINAL</span>
+      </div>
+      <div style="margin-bottom: 6px;">
+        <label style="font-size: 11px; opacity: 0.8; display: block; margin-bottom: 2px;">Type de Défaillance :</label>
+        <select id="fail-type-select" style="width: 100%; background: #1a1e24; color: #fff; border: 1px solid #333d4b; padding: 4px; border-radius: 4px; font-size: 11px;">
+          <option value="MISSED_APPROACH">1. Approche Décalée (Prise Manquée)</option>
+          <option value="SLIP_LOW_FRICTION">2. Glissement par Force Insuffisante</option>
+          <option value="DROP_IN_TRANSIT">3. Chute en Cours de Transport</option>
+          <option value="COLLISION_OBSTACLE">4. Collision avec Obstacle</option>
+          <option value="JOINT_LIMIT_REACH">5. Dépassement de Butée Articulaire</option>
+          <option value="EXCESSIVE_TORQUE">6. Surcharge de Couple Moteur</option>
+          <option value="TIPPED_PLACEMENT">7. Dépose Instable & Basculement</option>
+          <option value="KNOCK_ON_APPROACH">8. Percussion / Collision à l'Approche</option>
+          <option value="ORIENTATION_MISALIGNMENT">9. Défaut d'Orientation (+45°)</option>
+          <option value="DYNAMIC_JERK_SLIP">10. Décrochage par À-Coup Dynamique</option>
+          <option value="INCOMPLETE_RELEASE">11. Accrochage au Relâchement</option>
+          <option value="RANDOM_FAILURE">🎲 Scénario Aléatoire</option>
+        </select>
+      </div>
+      <div class="telemetry-kv-grid" style="margin-bottom: 6px;">
+        <div><span>Défaillance Armée</span><strong id="fail-armed-status">Non</strong></div>
+        <div><span>Déclenchée</span><strong id="fail-triggered-status">Non</strong></div>
+      </div>
+      <p id="fail-desc-p" style="font-size: 10px; color: #94a3b8; margin: 4px 0 6px; line-height: 1.3;">
+        Sélectionnez un scénario d'échec pour collecter des démonstrations négatives labellisées pour l'IA.
+      </p>
+      <div class="button-grid-2">
+        <button type="button" class="btn btn-warning" id="btn-fail-start">Collecter Défaillance</button>
+        <button type="button" class="btn btn-secondary" id="btn-fail-disarm">Réinitialiser</button>
+      </div>
+    `;
+
+    failSec.querySelector('#fail-type-select')?.addEventListener('change', (e) => {
+      const select = e.target as HTMLSelectElement;
+      const type = (select.value ?? 'MISSED_APPROACH') as FailureScenarioType;
+      const def = FAILURE_SCENARIO_DEFINITIONS[type];
+      const descP = failSec.querySelector('#fail-desc-p');
+      if (descP && def) {
+        descP.textContent = def.description;
+      }
+    });
+
+    failSec.querySelector('#btn-fail-start')?.addEventListener('click', () => {
+      const select = failSec.querySelector('#fail-type-select') as HTMLSelectElement | null;
+      const type = (select?.value ?? 'MISSED_APPROACH') as FailureScenarioType;
+      this.callbacks.setPlaying(true);
+      if (!this.episodeRecorder.isRecording) {
+        this.episodeRecorder.startRecording(
+          `failure_${type.toLowerCase()}_${Date.now()}`,
+          this.scenarioGenerator?.currentScenario ?? undefined,
+          type
+        );
+      }
+      this.pickAndPlace.armFailureScenario(type);
+      this.pickAndPlace.start();
+      this.refresh();
+    });
+
+    failSec.querySelector('#btn-fail-disarm')?.addEventListener('click', () => {
+      this.pickAndPlace.failureController.disarm();
+      this.pickAndPlace.reset();
+      this.refresh();
+    });
+
+    // 6. Pilote IA Autonome (ONNX Policy Inference)
+    const policySec = document.createElement('section');
+    policySec.className = 'panel-section';
+    policySec.innerHTML = `
+      <div class="section-header">
+        <h2>Pilote IA Autonome (ONNX)</h2>
+        <span class="badge badge-info" id="ai-policy-badge">NON CHARGÉ</span>
+      </div>
+      <div class="telemetry-kv-grid" style="margin-bottom: 6px;">
+        <div><span>Statut IA</span><strong id="ai-policy-status">Inactif</strong></div>
+        <div><span>Inférence</span><strong id="ai-policy-latency">0 ms</strong></div>
+      </div>
+      <p style="font-size: 10px; color: #94a3b8; margin: 4px 0 6px; line-height: 1.3;">
+        Exécute le réseau de neurones entraîné (robot_policy.onnx) en boucle fermée à 20 Hz directement dans Three.js.
+      </p>
+      <div class="button-grid-2">
+        <button type="button" class="btn btn-secondary" id="btn-load-ai-policy">Charger ONNX</button>
+        <button type="button" class="btn btn-primary" id="btn-toggle-ai-policy">Démarrer IA</button>
+      </div>
+    `;
+
+    policySec.querySelector('#btn-load-ai-policy')?.addEventListener('click', async () => {
+      const badge = policySec.querySelector('#ai-policy-badge');
+      const loadBtn = policySec.querySelector('#btn-load-ai-policy') as HTMLButtonElement | null;
+      if (badge) badge.textContent = 'CHARGEMENT...';
+      if (loadBtn) loadBtn.disabled = true;
+      if (this.neuralPolicyController) {
+        const ok = await this.neuralPolicyController.loadModel();
+        const telem = this.neuralPolicyController.getTelemetry();
+        if (badge) {
+          const backendLabel = telem.backend === 'onnx-wasm' ? 'ONNX' : (telem.backend === 'native-js' ? 'Natif JS' : '');
+          badge.textContent = ok ? `PRÊT ${backendLabel ? `(${backendLabel})` : ''}` : 'ERREUR';
+          badge.className = ok ? 'badge badge-valid' : 'badge badge-danger';
+        }
+      }
+      if (loadBtn) loadBtn.disabled = false;
+      this.refresh();
+    });
+
+    policySec.querySelector('#btn-toggle-ai-policy')?.addEventListener('click', async () => {
+      if (!this.neuralPolicyController) return;
+      const toggleBtn = policySec.querySelector('#btn-toggle-ai-policy') as HTMLButtonElement | null;
+      if (!this.neuralPolicyController.isLoaded) {
+        if (toggleBtn) toggleBtn.textContent = 'Chargement...';
+        await this.neuralPolicyController.loadModel();
+      }
+      this.callbacks.setPlaying(true);
+      if (this.neuralPolicyController.isRunning) {
+        this.neuralPolicyController.stop();
+      } else {
+        this.neuralPolicyController.start();
+      }
+      this.refresh();
+    });
+
     this.container.appendChild(simSec);
     this.container.appendChild(taskSec);
     this.container.appendChild(aiSec);
     this.container.appendChild(scenSec);
+    this.container.appendChild(failSec);
+    this.container.appendChild(policySec);
   }
 
   public refresh(): void {
@@ -530,6 +673,57 @@ export class SimulationControls {
 
     if (multiBtn) {
       multiBtn.textContent = progress.isSequenceRunning ? 'Arrêter Séquence' : 'Démarrer (6 Objets)';
+    }
+
+    // Contrôleur de Défaillances & Échecs ML
+    const failStatus = this.pickAndPlace.failureController.getStatus();
+    const failBadge = this.container.querySelector('#fail-active-badge');
+    const failArmed = this.container.querySelector('#fail-armed-status');
+    const failTriggered = this.container.querySelector('#fail-triggered-status');
+    if (failBadge) {
+      failBadge.textContent = failStatus.isInjecting ? failStatus.resolvedType : 'NOMINAL';
+      failBadge.className = failStatus.isInjecting ? 'badge badge-warning' : 'badge badge-info';
+    }
+    if (failArmed) {
+      failArmed.textContent = failStatus.isInjecting ? 'Oui' : 'Non';
+      failArmed.style.color = failStatus.isInjecting ? '#f59e0b' : '#94a3b8';
+    }
+    if (failTriggered) {
+      failTriggered.textContent = failStatus.faultTriggered ? 'Oui (Détecté)' : 'En attente';
+      failTriggered.style.color = failStatus.faultTriggered ? '#ef4444' : '#94a3b8';
+    }
+
+    // Télémétrie Politique Neuronale ONNX
+    if (this.neuralPolicyController) {
+      const telem = this.neuralPolicyController.getTelemetry();
+      const policyBadge = this.container.querySelector('#ai-policy-badge');
+      const policyStatus = this.container.querySelector('#ai-policy-status');
+      const policyLatency = this.container.querySelector('#ai-policy-latency');
+      const toggleBtn = this.container.querySelector('#btn-toggle-ai-policy');
+
+      if (policyBadge && telem.isLoaded) {
+        const backendLabel = telem.backend === 'onnx-wasm' ? 'ONNX' : (telem.backend === 'native-js' ? 'Natif JS' : '');
+        policyBadge.textContent = telem.isRunning ? `EN COURS (${backendLabel})` : `PRÊT (${backendLabel})`;
+        policyBadge.className = telem.isRunning ? 'badge badge-valid' : 'badge badge-info';
+      }
+      if (policyStatus) {
+        const phaseInfo = telem.currentPhase
+          ? `${telem.phaseIndex}/9 ${telem.currentPhase} (${Math.round((telem.confidenceScore ?? 1) * 100)}%)`
+          : 'Contrôle Actif (20 Hz)';
+        policyStatus.textContent = telem.isRunning
+          ? phaseInfo
+          : telem.isLoaded
+          ? `Prêt (${telem.backend})`
+          : 'Non chargé';
+        (policyStatus as HTMLElement).style.color = telem.isRunning ? '#34d399' : '#94a3b8';
+      }
+      if (policyLatency) {
+        policyLatency.textContent = `${telem.inferenceTimeMs.toFixed(1)} ms`;
+      }
+      if (toggleBtn) {
+        toggleBtn.textContent = telem.isRunning ? 'Arrêter IA' : 'Démarrer IA';
+        toggleBtn.className = telem.isRunning ? 'btn btn-warning' : 'btn btn-primary';
+      }
     }
   }
 }

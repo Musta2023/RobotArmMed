@@ -1,0 +1,30 @@
+{
+  "output_csv": "datasets/reconstructed_pick_and_place_dataset.csv",
+  "total_rows": 57016,
+  "total_unique_episodes": 472,
+  "nominal_rows": 55267,
+  "failure_rows": 1749,
+  "cleaning_stats": {
+    "raw_success_rows": 40353,
+    "cleaned_success_rows": 32387,
+    "static_frames_removed": 7800,
+    "segmented_single_object_episodes": 166
+  },
+  "phase_distribution": {
+    "MOVE_TO_TARGET": 15301,
+    "APPROACH": 7712,
+    "LIFT": 7278,
+    "DESCENT": 6409,
+    "SUCCESS": 6062,
+    "ALIGNMENT": 4606,
+    "GRASP": 3874,
+    "RELEASE": 3576,
+    "VERIFICATION": 2198
+  },
+  "source_distribution": {
+    "recorded_cleaned": 32387,
+    "generalized_nominal": 22880,
+    "generalized_failure": 1100,
+    "recorded_failure": 649
+  }
+}

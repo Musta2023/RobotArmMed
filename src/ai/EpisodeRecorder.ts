@@ -46,6 +46,7 @@ export interface EpisodeStepFrame {
     position: [number, number, number];
     orientation: [number, number, number, number];
   };
+  target_position?: [number, number, number];
   object_state: {
     position: [number, number, number];
     orientation: [number, number, number, number];
@@ -75,6 +76,7 @@ export interface RecordedEpisodeDataset {
   episode_id: string;
   scenario_id?: string;
   scenario_config?: ScenarioDefinition;
+  failure_mode?: string;
   created_at: string;
   total_steps: number;
   outcome: 'success' | 'failure' | 'incomplete';
@@ -134,6 +136,7 @@ export class EpisodeRecorder {
   public prohibitedCollisionEventsCount: number = 0;
 
   public validator: EpisodeValidator = new EpisodeValidator();
+  public activeFailureMode: string | null = null;
   private _lastRecordedTaskState: PickAndPlaceState | null = null;
 
   constructor() {
@@ -154,8 +157,13 @@ export class EpisodeRecorder {
   /**
    * Starts recording. In continuous mode, multiple episodes will be chained seamlessly.
    */
-  public startRecording(customEpisodeId?: string, scenario?: ScenarioDefinition): void {
+  public startRecording(
+    customEpisodeId?: string,
+    scenario?: ScenarioDefinition,
+    failureMode?: string
+  ): void {
     this.currentScenario = scenario;
+    this.activeFailureMode = failureMode ?? null;
     this.episodeId =
       customEpisodeId ?? `surgical_ep_${String(this.episodeCounter++).padStart(3, '0')}`;
     this.currentEpisodeFrames = [];
@@ -220,8 +228,11 @@ export class EpisodeRecorder {
     this.currentEpisodeFrames = [];
     this.completedEpisodes = [];
     this.explicitOutcome = null;
+    this.activeFailureMode = null;
     this.lifecycleState = 'IDLE';
     this.isRecording = false;
+    this.episodeCounter = 1;
+    this.episodeId = 'surgical_ep_001';
   }
 
   /**
@@ -296,6 +307,7 @@ export class EpisodeRecorder {
         position: [...targetPose.position],
         orientation: [...targetPose.orientation]
       },
+      target_position: [...observation.target_position],
       object_state: {
         position: [...observation.object_position],
         orientation: [...observation.object_orientation],
@@ -418,6 +430,7 @@ export class EpisodeRecorder {
       episode_id: this.episodeId,
       scenario_id: this.currentScenario?.scenario_id,
       scenario_config: this.currentScenario,
+      failure_mode: this.activeFailureMode ?? undefined,
       created_at: new Date().toISOString(),
       total_steps: frames.length,
       outcome,
@@ -531,7 +544,7 @@ export class EpisodeRecorder {
       const op = f.object_state.position;
       const oq = f.object_state.orientation;
       const ee = f.end_effector_pose.position;
-      const tp = f.gripper_target_pose.position;
+      const tp = (f as any).target_position ?? f.gripper_target_pose.position;
       const jp = f.joint_state.positions_rad;
       return [
         dataset.episode_id,
@@ -613,7 +626,7 @@ export class EpisodeRecorder {
         const op = f.object_state.position;
         const oq = f.object_state.orientation;
         const ee = f.end_effector_pose.position;
-        const tp = f.gripper_target_pose.position;
+        const tp = (f as any).target_position ?? f.gripper_target_pose.position;
         const jp = f.joint_state.positions_rad;
         rows.push(
           [
