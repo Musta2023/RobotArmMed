@@ -183,4 +183,40 @@ describe('Section 6 & 8 : Validation Physique & Généralisation de NeuralPolicy
       app.dispose();
     }
   }, 30000);
+
+  it('place chaque objet sur son propre slot dédié (Slot B1, B2, B3...) en scène multi-objets au lieu du centre unique', async () => {
+    const app = await createDigitalTwinApp({ headless: true });
+    app.setupSixObjectsInZoneA();
+    app.stepSimulation(15);
+
+    app.neuralPolicyController.loadWeightsFromObject(weightsJson);
+    app.neuralPolicyController.start();
+
+    // Vérifier dès le départ que Object_01 cible bien Slot B1 [0.22, 0.02, 0.20] (et non le centre [0.30, 0.02, 0.24])
+    expect(app.neuralPolicyController.lockedTargetPosition[0]).toBeCloseTo(0.22, 3);
+    expect(app.neuralPolicyController.lockedTargetPosition[2]).toBeCloseTo(0.20, 3);
+
+    // Exécuter le transfert des 2 premiers objets (Object_01 -> Slot B1, Object_02 -> Slot B2)
+    for (let step = 0; step < 950; step++) {
+      app.stepSimulation(1);
+      const obj1 = app.instrumentFactory.instruments.get('Object_01')!;
+      const obj2 = app.instrumentFactory.instruments.get('Object_02')!;
+      if (obj1.isPlacedInTargetSlot && obj2.isPlacedInTargetSlot) {
+        break;
+      }
+    }
+    app.stepSimulation(15);
+
+    const obj1Pos = app.instrumentFactory.instruments.get('Object_01')!.managedBody.body.translation();
+    const obj2Pos = app.instrumentFactory.instruments.get('Object_02')!.managedBody.body.translation();
+
+    // Object_01 doit être posé sur Slot B1 (0.22, 0.02, 0.20)
+    expect(Math.hypot(obj1Pos.x - 0.22, obj1Pos.z - 0.20)).toBeLessThan(0.045);
+    // Object_02 doit être posé sur Slot B2 (0.30, 0.02, 0.20)
+    expect(Math.hypot(obj2Pos.x - 0.30, obj2Pos.z - 0.20)).toBeLessThan(0.045);
+    // Les deux objets sont bien séparés chacun sur sa place (~8 cm d'écart)
+    expect(Math.hypot(obj1Pos.x - obj2Pos.x, obj1Pos.z - obj2Pos.z)).toBeGreaterThan(0.055);
+
+    app.dispose();
+  }, 30000);
 });

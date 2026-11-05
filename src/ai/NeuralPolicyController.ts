@@ -36,6 +36,7 @@ import {
 } from '../control/InverseKinematics.js';
 import { ActiveSurgicalInstrument } from '../objects/InstrumentFactory.js';
 import { ZONE_B_CONFIG, TARGET_TRAY_POS } from '../objects/ObjectProperties.js';
+import { WorkZoneManager } from '../objects/WorkZoneManager.js';
 
 export type NeuralBackendType = 'onnx-wasm' | 'native-js' | 'none';
 
@@ -94,6 +95,7 @@ export class NeuralPolicyController {
   public gripper: Gripper;
   public observationBuilder: ObservationBuilder;
   public collisionManager: CollisionManager;
+  public workZoneManager?: WorkZoneManager;
 
   // Rate limiter: 20 Hz control loop (dt = 0.05s)
   public controlIntervalSeconds: number = 0.05;
@@ -106,10 +108,11 @@ export class NeuralPolicyController {
   public graspRetryCount: number = 0;
   public maxGraspRetries: number = 3;
 
-  // Verrouillage spatial de l'objet actif au début du cycle de prise
+  // Verrouillage spatial de l'objet actif et de son slot cible dédié
   private lockedPickPosition: [number, number, number] | null = null;
   private lockedPickQuaternion: [number, number, number, number] | null = null;
-  private lockedTargetPosition: [number, number, number] = [...TARGET_TRAY_POS];
+  public lockedTargetPosition: [number, number, number] = [...TARGET_TRAY_POS];
+  public lockedTargetSlotIndex: number = 0;
   private completedObjectIds: Set<string> = new Set();
 
   // Telemetry
@@ -123,11 +126,13 @@ export class NeuralPolicyController {
     gripper: Gripper;
     observationBuilder: ObservationBuilder;
     collisionManager: CollisionManager;
+    workZoneManager?: WorkZoneManager;
   }) {
     this.motionController = params.motionController;
     this.gripper = params.gripper;
     this.observationBuilder = params.observationBuilder;
     this.collisionManager = params.collisionManager;
+    this.workZoneManager = params.workZoneManager;
   }
 
   /**
@@ -216,6 +221,9 @@ export class NeuralPolicyController {
     this.timeSinceLastInference = this.controlIntervalSeconds;
     this.graspRetryCount = 0;
     this.completedObjectIds.clear();
+    if (this.workZoneManager) {
+      this.workZoneManager.resetSlotOccupancy();
+    }
     this._selectNextAvailableObject();
     this._transitionToPhase('APPROACH');
     console.log(`[NeuralPolicy] ▶ Politique neuronale Pick-and-Place 9-Phases activée (${this.backend}) !`);
@@ -253,23 +261,42 @@ export class NeuralPolicyController {
   }
 
   /**
-   * Sélectionne automatiquement l'objet à manipuler (qu'il y ait 1 objet unique placé
-   * aléatoirement ou plusieurs objets sur le plateau de départ Zone A).
+   * Sélectionne automatiquement l'objet à manipuler et lui attribue son emplacement
+   * cible dédié (Slot B1 à B6 sur la Zone B lorsqu'il y a plusieurs objets, ou la cible
+   * personnalisée pour un objet unique).
    */
   private _selectNextAvailableObject(customTargetPos?: [number, number, number]): ActiveSurgicalInstrument | null {
     const factory = this.observationBuilder.instrumentFactory;
     let candidate: ActiveSurgicalInstrument | null = null;
+    const sixOrderedIds = ['Object_01', 'Object_02', 'Object_03', 'Object_04', 'Object_05', 'Object_06'];
 
-    // 1. Vérifier d'abord l'instrument actif s'il n'est pas déjà placé en Zone B
-    const active = factory.getActiveInstrument();
-    if (active && !this.completedObjectIds.has(active.config.id)) {
-      const pos = active.managedBody.body.translation();
-      if (pos.x < 0.12 && pos.y > 0.005) {
-        candidate = active;
+    // 1. Si les 6 objets de la Zone A sont présents, les traiter dans l'ordre canonique Object_01 -> Object_06
+    if (factory.instruments.size > 1) {
+      for (const id of sixOrderedIds) {
+        if (this.completedObjectIds.has(id)) continue;
+        const inst = factory.instruments.get(id);
+        if (inst) {
+          const pos = inst.managedBody.body.translation();
+          if (pos.x < 0.12 && pos.y > 0.005) {
+            candidate = inst;
+            break;
+          }
+        }
       }
     }
 
-    // 2. Sinon chercher tout objet présent du côté départ (x < 0.12) non encore transféré
+    // 2. Sinon vérifier l'instrument actif s'il n'est pas déjà placé en Zone B
+    if (!candidate) {
+      const active = factory.getActiveInstrument();
+      if (active && !this.completedObjectIds.has(active.config.id)) {
+        const pos = active.managedBody.body.translation();
+        if (pos.x < 0.12 && pos.y > 0.005) {
+          candidate = active;
+        }
+      }
+    }
+
+    // 3. Sinon chercher tout autre objet restant du côté départ (x < 0.12)
     if (!candidate) {
       factory.instruments.forEach((inst) => {
         if (candidate || this.completedObjectIds.has(inst.config.id)) return;
@@ -280,8 +307,8 @@ export class NeuralPolicyController {
       });
     }
 
-    // 3. Repli sur le premier objet de la scène
-    if (!candidate) {
+    // 4. Repli sur le premier objet non complété
+    if (!candidate && this.completedObjectIds.size === 0) {
       const first = factory.instruments.values().next().value;
       if (first) candidate = first;
     }
@@ -293,15 +320,37 @@ export class NeuralPolicyController {
       this.lockedPickPosition = [t.x, t.y, t.z];
       this.lockedPickQuaternion = [r.x, r.y, r.z, r.w];
 
-      // Attribution de la cible (slot correspondant si multi-objets, ou targetPos fournie)
-      const matchIdx = ['Object_01', 'Object_02', 'Object_03', 'Object_04', 'Object_05', 'Object_06'].indexOf(
-        candidate.config.id
-      );
-      if (customTargetPos) {
+      // Attribution stricte du slot cible dédié à chaque objet :
+      // - Object_01 -> Slot B1 [0.22, 0.02, 0.20]
+      // - Object_02 -> Slot B2 [0.30, 0.02, 0.20]
+      // - Object_03 -> Slot B3 [0.38, 0.02, 0.20]
+      // - Object_04 -> Slot B4 [0.22, 0.02, 0.29]
+      // - Object_05 -> Slot B5 [0.30, 0.02, 0.29]
+      // - Object_06 -> Slot B6 [0.38, 0.02, 0.29]
+      const matchIdx = sixOrderedIds.indexOf(candidate.config.id);
+      const slots = this.workZoneManager?.zoneB.slots ?? ZONE_B_CONFIG.slots;
+
+      if (matchIdx >= 0 && factory.instruments.size > 1) {
+        this.lockedTargetSlotIndex = matchIdx;
+        this.lockedTargetPosition = [...slots[matchIdx]];
+        if (this.workZoneManager) {
+          this.workZoneManager.assignTargetSlot(matchIdx, candidate.config.id);
+        }
+      } else if (factory.instruments.size > 1) {
+        const slotIdx = this.completedObjectIds.size % slots.length;
+        this.lockedTargetSlotIndex = slotIdx;
+        this.lockedTargetPosition = [...slots[slotIdx]];
+        if (this.workZoneManager) {
+          this.workZoneManager.assignTargetSlot(slotIdx, candidate.config.id);
+        }
+      } else if (customTargetPos) {
+        this.lockedTargetSlotIndex = 0;
         this.lockedTargetPosition = [...customTargetPos];
-      } else if (matchIdx >= 0 && factory.instruments.size > 1) {
-        this.lockedTargetPosition = [...ZONE_B_CONFIG.slots[matchIdx]];
+      } else if (matchIdx >= 0) {
+        this.lockedTargetSlotIndex = matchIdx;
+        this.lockedTargetPosition = [...slots[matchIdx]];
       } else {
+        this.lockedTargetSlotIndex = 0;
         this.lockedTargetPosition = [...TARGET_TRAY_POS];
       }
     }
@@ -547,14 +596,27 @@ export class NeuralPolicyController {
         desiredPos = [pickPos[0], 0.26, pickPos[2]];
         desiredQuat = graspQuat;
         break;
-      case 'MOVE_TO_TARGET':
+      case 'MOVE_TO_TARGET': {
+        const curSnap = this.motionController.jointController.robotModel.state.latestSnapshot;
+        const curTcp = curSnap.endEffector.position;
+        const horizDistToSlot = Math.hypot(curTcp[0] - targetPos[0], curTcp[2] - targetPos[2]);
+        // Approche haute de sécurité au-dessus du slot cible avant la descente verticale
+        // afin de ne jamais heurter les objets déjà déposés sur les autres slots de la Zone B
+        if (horizDistToSlot > 0.055 && this.phaseTimerSeconds < 0.70) {
+          desiredPos = [targetPos[0], 0.24, targetPos[2]];
+        } else {
+          desiredPos = [targetPos[0], targetPos[1] + objH * 0.5 + 0.015, targetPos[2]];
+        }
+        desiredQuat = placeQuat;
+        break;
+      }
       case 'RELEASE':
         desiredPos = [targetPos[0], targetPos[1] + objH * 0.5 + 0.015, targetPos[2]];
         desiredQuat = placeQuat;
         break;
       case 'SUCCESS':
       default:
-        desiredPos = [targetPos[0], 0.24, targetPos[2]];
+        desiredPos = [targetPos[0], 0.25, targetPos[2]];
         desiredQuat = placeQuat;
         break;
     }
@@ -623,9 +685,14 @@ export class NeuralPolicyController {
         }
       }
 
-      const targetPos: [number, number, number] = externalTargetPos
+      // En mode multi-objets (ou objets nommés Object_01..06), chaque objet conserve
+      // strictement son propre slot dédié (Slot B1..B6) dans this.lockedTargetPosition.
+      const isMultiObjectScene = factory.instruments.size > 1;
+      const targetPos: [number, number, number] = isMultiObjectScene
+        ? [...this.lockedTargetPosition]
+        : externalTargetPos
         ? [...externalTargetPos]
-        : this.lockedTargetPosition;
+        : [...this.lockedTargetPosition];
 
       // 1. Construction du vecteur d'observation 35D conditionné par la phase
       const input35D = this.extractObservation35D(targetPos, this.currentPhase);
@@ -776,7 +843,7 @@ export class NeuralPolicyController {
 
       case 'MOVE_TO_TARGET':
         this.gripper.close(false);
-        if (reachedJointTarget || this.phaseTimerSeconds >= 1.45) {
+        if ((this.phaseTimerSeconds >= 0.75 && reachedJointTarget) || this.phaseTimerSeconds >= 1.55) {
           this._transitionToPhase('RELEASE');
         }
         break;
@@ -795,9 +862,16 @@ export class NeuralPolicyController {
           if (activeInst) {
             this.completedObjectIds.add(activeInst.config.id);
             activeInst.isPlacedInTargetSlot = true;
+            if (this.workZoneManager) {
+              this.workZoneManager.markObjectPlacedAndStable(
+                this.lockedTargetSlotIndex,
+                activeInst.config.id
+              );
+            }
           }
-          // Vérifier s'il reste d'autres objets en Zone A (mode multi-objets) ou terminer proprement
-          const nextObj = this._selectNextAvailableObject(externalTargetPos);
+          // Sélectionner le prochain objet restant en Zone A et lui assigner son propre slot cible
+          const isMulti = this.observationBuilder.instrumentFactory.instruments.size > 1;
+          const nextObj = this._selectNextAvailableObject(isMulti ? undefined : externalTargetPos);
           if (nextObj && !this.completedObjectIds.has(nextObj.config.id)) {
             this.graspRetryCount = 0;
             this._transitionToPhase('APPROACH');

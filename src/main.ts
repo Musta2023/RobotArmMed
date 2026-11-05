@@ -176,7 +176,8 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
     motionController,
     gripper,
     observationBuilder,
-    collisionManager
+    collisionManager,
+    workZoneManager
   });
 
   // Simulation playback state
@@ -189,7 +190,17 @@ export async function createDigitalTwinApp(options: DigitalTwinAppOptions = {}) 
   const executeFixedSubstep = (dt: number = physicsWorld.fixedTimestep): void => {
     // a. Step autonomous neural policy OR rule-based Pick-and-Place state machine
     if (neuralPolicyController.isRunning) {
-      neuralPolicyController.step(dt, pickAndPlace.targetPosition);
+      if (instrumentFactory.instruments.size > 1) {
+        neuralPolicyController.step(dt);
+        pickAndPlace.targetPosition = [...neuralPolicyController.lockedTargetPosition];
+        placementVerifier.targetTrayCenter.set(
+          neuralPolicyController.lockedTargetPosition[0],
+          neuralPolicyController.lockedTargetPosition[1],
+          neuralPolicyController.lockedTargetPosition[2]
+        );
+      } else {
+        neuralPolicyController.step(dt, pickAndPlace.targetPosition);
+      }
     } else if (
       pickAndPlace.state !== 'IDLE' &&
       pickAndPlace.state !== 'COMPLETE' &&
